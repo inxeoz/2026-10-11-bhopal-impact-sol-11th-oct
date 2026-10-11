@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bhopal Sahayak</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <div class="brand">
+        <span class="mark">BS</span>
+        <div>
+          <h1>Bhopal Sahayak</h1>
+          <p class="sub">Bhopal Impact Lab 2026 · open source for BMC</p>
+        </div>
+      </div>
+      <nav class="tracks" role="tablist">
+        <button class="tab" data-track="bhumi-vikas" role="tab">Building rules</button>
+        <button class="tab" data-track="visarjan" role="tab">Ghat water risk</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- TRACK 1 -->
+    <section id="view-bhumi-vikas" class="view" hidden>
+      <p class="lede">Ask about the M.P. Bhumi Vikas Rules, 2012. Every answer shows the rule number
+        and the exact text it came from — or says clearly that the rules are silent.</p>
+
+      <form id="ask-form" class="askbar" autocomplete="off">
+        <input id="q" type="text" placeholder="e.g. My plot is 200 sq m on a 9 m road. How much gap at the front?" />
+        <div class="askbar-side">
+          <div class="lang" role="group" aria-label="Language">
+            <button type="button" class="lang-btn is-on" data-lang="en">EN</button>
+            <button type="button" class="lang-btn" data-lang="hi">हिं</button>
+          </div>
+          <button class="primary" type="submit">Ask</button>
+        </div>
+      </form>
+
+      <div id="examples" class="chips">
+        <button class="chip">My house faces a 10 m wide street and will be 9 m tall. How much open space at the front?</button>
+        <button class="chip">What is the minimum rear open space for a 150 sq m residential plot?</button>
+        <button class="chip">How long is a development permission valid, and how many times can I renew it?</button>
+        <button class="chip">How do I pay my property tax online?</button>
+      </div>
+
+      <div id="answer" class="answer-wrap"></div>
+    </section>
+
+    <!-- TRACK 2 -->
+    <section id="view-visarjan" class="view" hidden>
+      <p class="lede">Bhopal immersion ghats ranked by water-quality risk against CPCB Class B
+        (outdoor bathing), before Durga visarjan on 20 October 2026. Every rank traces to a report page.</p>
+      <div id="brief" class="brief"></div>
+      <div id="ghats" class="ghats"></div>
+      <p id="ghats-note" class="footnote"></p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

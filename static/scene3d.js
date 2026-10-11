@@ -35,6 +35,7 @@ const USES = [
   ["farm_house", "Farm house"],
 ];
 
+const slug = (v) => window.slug(v);
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (v) => (v == null ? "—" : Number(v).toFixed(2).replace(/\.?0+$/, ""));
@@ -69,32 +70,29 @@ class PlotView {
     this.xray = scene.components.some((c) => INSIDE.has(c.id));
 
     host.innerHTML = `
-      <div class="s3-cta">
-        <div><b>Want to customize?</b> Move things around and check them against the rules as you go.</div>
-        <button type="button" class="primary" data-edit>Open in Draw plot →</button>
-      </div>
-      <div class="s3-stage">
-        <div class="s3-canvas"></div>
-        <div class="s3-tip" hidden></div>
-        <div class="s3-views">
-          <button type="button" data-view="3d" class="is-on">3D</button>
-          <button type="button" data-view="top">Top</button>
-          <button type="button" data-view="street">Street</button>
-          <button type="button" data-xray class="${this.xray ? "is-on" : ""}" title="See inside the building">X-ray</button>
+      <button type="button" class="s3-edit" data-testid="scene-edit-in-draw-plot" data-edit title="Move things around and check them against the rules as you go">Edit in Draw plot →</button>
+      <div class="s3-stage" data-testid="scene-stage">
+        <div class="s3-canvas" data-testid="scene-canvas"></div>
+        <div class="s3-tip" data-testid="scene-tooltip" hidden></div>
+        <div class="s3-views" data-testid="scene-views">
+          <button type="button" data-testid="scene-view-3d" data-view="3d" class="is-on">3D</button>
+          <button type="button" data-testid="scene-view-top" data-view="top">Top</button>
+          <button type="button" data-testid="scene-view-street" data-view="street">Street</button>
+          <button type="button" data-testid="scene-xray" data-xray class="${this.xray ? "is-on" : ""}" title="See inside the building">X-ray</button>
         </div>
-        <div class="s3-status"></div>
-        <p class="s3-hint">Drag to orbit · scroll to zoom · right-drag to pan · click anything for its rule</p>
+        <div class="s3-status" data-testid="scene-status"></div>
+        <p class="s3-hint" data-testid="scene-hint">Drag to orbit · scroll to zoom · click anything for its rule</p>
       </div>
-      <div class="s3-side">
-        <div class="s3-readout"></div>
-        <div class="s3-info"></div>
-        <form class="s3-controls" autocomplete="off"></form>
+      <div class="s3-side" data-testid="scene-side">
+        <div class="s3-readout" data-testid="scene-readout"></div>
+        <div class="s3-info" data-testid="scene-info"></div>
+        <form class="s3-controls" data-testid="scene-controls" autocomplete="off"></form>
       </div>
-      <div class="s3-palette"></div>`;
+      <div class="s3-palette" data-testid="scene-palette"></div>`;
     this.$ = (s) => host.querySelector(s);
 
     if (!webglOK()) {
-      this.$(".s3-canvas").innerHTML = '<p class="s3-nogl">3D view needs WebGL, which this browser has turned off.</p>';
+      this.$(".s3-canvas").innerHTML = '<p class="s3-nogl" data-testid="scene-no-webgl">3D view needs WebGL, which this browser has turned off.</p>';
       this.renderPanels();
       return;
     }
@@ -453,39 +451,39 @@ class PlotView {
 
   renderStatus() {
     const s = this.scene;
-    this.$(".s3-status").innerHTML = `<span class="s3-badge ${s.permitted && s.covered ? "ok" : "no"}">
+    this.$(".s3-status").innerHTML = `<span class="s3-badge ${s.permitted && s.covered ? "ok" : "no"}" data-testid="scene-status-badge">
       ${s.permitted && s.covered ? "Within these rules" : s.covered ? "Breaks a rule — see notes" : "Not computed"}</span>
-      <span class="s3-env">${esc(s.envelope)}</span>`;
+      <span class="s3-env" data-testid="scene-envelope">${esc(s.envelope)}</span>`;
   }
 
   renderReadout() {
     const s = this.scene;
     const cover = s.plot_area_sqm ? (s.footprint_sqm / s.plot_area_sqm) * 100 : 0;
     const assumed = s.assumed.length
-      ? `<p class="s3-assumed"><b>Assumed</b> (not in your question): ${s.assumed.map((a) => esc(a.text)).join(" · ")}. Adjust below.</p>`
+      ? `<p class="s3-assumed" data-testid="scene-assumed"><b>Assumed:</b> ${s.assumed.map((a) => esc(a.text)).join(" · ")}</p>`
       : "";
     const notes =
-      s.notes.map((n) => `<p class="s3-warn">${esc(n)}</p>`).join("") +
-      (s.info || []).map((n) => `<p class="s3-infonote">${esc(n)}</p>`).join("");
+      s.notes.map((n, i) => `<p class="s3-warn" data-testid="scene-warning-${i + 1}">${esc(n)}</p>`).join("") +
+      (s.info || []).map((n, i) => `<p class="s3-infonote" data-testid="scene-note-${i + 1}">${esc(n)}</p>`).join("");
     const kind = { detached: "Detached", "semi-detached": "Semi-detached", row: "Row-type" }[s.building_type];
     const far = s.far
-      ? `<div class="s3-far ${s.far.ok ? "" : "over"}" data-pin="far" title="Show rule text">
+      ? `<div class="s3-far ${s.far.ok ? "" : "over"}" data-testid="scene-far-meter" data-pin="far" title="Show rule text">
            <div class="s3-far-head"><span>Floor area vs FAR ${fmt(s.far.far)}</span>
              <b>${fmt(s.far.proposed_sqm)} / ${fmt(s.far.allowed_sqm)} sq m</b></div>
            <span class="s3-far-bar"><span style="width:${Math.min(100, (s.far.proposed_sqm / Math.max(s.far.allowed_sqm, 1)) * 100)}%"></span></span>
          </div>`
       : "";
     this.$(".s3-readout").innerHTML = s.covered
-      ? `<div class="s3-big">${fmt(s.footprint_sqm)} <span>sq m buildable per floor</span></div>
-         <div class="s3-small">${fmt(s.footprint_w_m)} m × ${fmt(s.footprint_d_m)} m · ${Math.round(cover)}% of a ${fmt(s.plot_area_sqm)} sq m plot${s.use_type === "residential" ? ` · ${kind}` : ""}${
+      ? `<div class="s3-big" data-testid="scene-buildable-area">${fmt(s.footprint_sqm)} <span>sq m buildable per floor</span></div>
+         <div class="s3-small" data-testid="scene-footprint">${fmt(s.footprint_w_m)} m × ${fmt(s.footprint_d_m)} m · ${Math.round(cover)}% of a ${fmt(s.plot_area_sqm)} sq m plot${s.use_type === "residential" ? ` · ${kind}` : ""}${
            s.open_space_limit_sqm > s.footprint_sqm + 0.5 ? `<br>${fmt(s.open_space_limit_sqm)} sq m inside the open spaces; less is drawn because of ${s.far && s.far.proposed_sqm >= s.far.allowed_sqm - 0.5 ? "FAR" : "ground coverage"}.` : ""
          }</div>
          ${far}
-         <ul class="s3-legend">
+         <ul class="s3-legend" data-testid="scene-open-spaces">
            ${legendRow("front", s.front)}${legendRow("rear", s.rear)}
            ${legendRow("side", s.side_left, s.side_right)}
          </ul>${assumed}${notes}`
-      : `<div class="s3-big s3-big-warn">Not covered <span>by these rules</span></div>${assumed}${notes}`;
+      : `<div class="s3-big s3-big-warn" data-testid="scene-not-covered">Not covered <span>by these rules</span></div>${assumed}${notes}`;
     this.$(".s3-readout").querySelectorAll("[data-pin]").forEach((li) =>
       li.addEventListener("click", () => {
         this.pinned = li.dataset.pin === "far" ? { far: true } : { setback: this.scene[li.dataset.pin] };
@@ -496,17 +494,21 @@ class PlotView {
 
   renderInfo() {
     const p = this.pinned, s = this.scene;
-    const cite = (x) => `<div class="cite-head"><span class="rule">${esc(x.label)}</span><span class="page">${esc(x.cite)}</span>${window.docButton ? window.docButton(x) : ""}</div>
-      <pre class="quote">${esc(x.quote)}</pre>`;
+    const id = window.testIds();
+    const cite = (x) => {
+      const t = id("scene-info-cite", x.label);
+      return `<div class="cite-head" data-testid="${t}"><span class="rule" data-testid="${t}-rule">${esc(x.label)}</span><span class="page" data-testid="${t}-page">${esc(x.cite)}</span>${window.docButton ? window.docButton(x, `${t}-show-in-document`) : ""}</div>
+      <pre class="quote" data-testid="${t}-quote">${esc(x.quote)}</pre>`;
+    };
     let html = "";
     if (p?.setback) html = cite(p.setback);
-    else if (p?.far && s.far) html = `${s.far.note ? `<p class="s3-small">${esc(s.far.note)}</p>` : ""}${cite(s.far.source)}`;
+    else if (p?.far && s.far) html = `${s.far.note ? `<p class="s3-small" data-testid="scene-info-far-note">${esc(s.far.note)}</p>` : ""}${cite(s.far.source)}`;
     else if (p?.component) {
       const c = s.components.find((x) => x.id === p.component);
       if (c)
-        html = `<div class="s3-comp-head"><b>${esc(c.name)}</b> <span class="s3-badge ${c.ok ? "ok" : "no"}">${c.ok ? "allowed" : "not allowed here"}</span></div>
-          ${c.notes.map((n) => `<p class="s3-cnote">${esc(n)}</p>`).join("")}
-          ${c.illustrative.length ? `<p class="s3-illus"><b>Drawn, not ruled:</b> ${c.illustrative.map(esc).join(" ")}</p>` : ""}
+        html = `<div class="s3-comp-head" data-testid="scene-info-component"><b data-testid="scene-info-component-name">${esc(c.name)}</b> <span class="s3-badge ${c.ok ? "ok" : "no"}" data-testid="scene-info-component-status">${c.ok ? "allowed" : "not allowed here"}</span></div>
+          ${c.notes.map((n, i) => `<p class="s3-cnote" data-testid="scene-info-component-note-${i + 1}">${esc(n)}</p>`).join("")}
+          ${c.illustrative.length ? `<p class="s3-illus" data-testid="scene-info-component-illustrative"><b>Drawn, not ruled:</b> ${c.illustrative.map(esc).join(" ")}</p>` : ""}
           ${c.sources.map(cite).join("")}`;
     }
     this.$(".s3-info").innerHTML = html;
@@ -516,25 +518,25 @@ class PlotView {
     const i = this.input, s = this.scene;
     const val = (k, shown) => (i[k] != null ? i[k] : shown);
     const slider = (k, lbl, min, max, step, shown, unit) => `
-      <label class="s3-row">
+      <label class="s3-row" data-testid="scene-control-${slug(k)}-field">
         <span class="s3-lbl">${lbl}</span>
-        <input type="range" name="${k}" min="${min}" max="${max}" step="${step}" value="${val(k, shown)}" />
-        <output>${fmt(val(k, shown))} ${unit}</output>
+        <input type="range" data-testid="scene-control-${slug(k)}" name="${k}" min="${min}" max="${max}" step="${step}" value="${val(k, shown)}" />
+        <output data-testid="scene-control-${slug(k)}-value">${fmt(val(k, shown))} ${unit}</output>
       </label>`;
     const kinds = [["detached", "Detached"], ["semi-detached", "Semi"], ["row", "Row"]];
     const form = this.$(".s3-controls");
     form.innerHTML = `
-      <label class="s3-row"><span class="s3-lbl">Use</span>
-        <select name="use_type">${USES.map(([v, t]) => `<option value="${v}" ${s.use_type === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+      <label class="s3-row" data-testid="scene-control-use-field"><span class="s3-lbl">Use</span>
+        <select name="use_type" data-testid="scene-control-use">${USES.map(([v, t]) => `<option value="${v}" ${s.use_type === v ? "selected" : ""}>${t}</option>`).join("")}</select>
       </label>
       ${slider("plot_area", "Plot area", 30, 6000, 5, s.plot_area_sqm, "sq m")}
       ${slider("frontage", "Frontage", 4, 80, 0.5, s.frontage_m, "m")}
       ${slider("street_width", "Street width", 3, 80, 0.5, s.street_width_m, "m")}
       ${slider("height", "Height", 3, 100, 0.5, s.height_m, "m")}
       ${slider("plot_rise", "Plot vs road", -3, 3, 0.1, s.plot_rise_m || 0, "m")}
-      <div class="s3-row" ${s.use_type === "residential" ? "" : "hidden"}><span class="s3-lbl">Type</span>
-        <div class="s3-seg">${kinds
-          .map(([k, t]) => `<button type="button" data-kind="${k}" class="${s.building_type === k ? "is-on" : ""}">${t}</button>`)
+      <div class="s3-row" data-testid="scene-control-type-field" ${s.use_type === "residential" ? "" : "hidden"}><span class="s3-lbl">Type</span>
+        <div class="s3-seg" data-testid="scene-control-type">${kinds
+          .map(([k, t]) => `<button type="button" data-testid="scene-control-type-${slug(k)}" data-kind="${k}" class="${s.building_type === k ? "is-on" : ""}">${t}</button>`)
           .join("")}</div>
       </div>`;
     form.querySelectorAll("input[type=range]").forEach((r) =>
@@ -569,21 +571,25 @@ class PlotView {
       const c = s.components.find((x) => x.id === e.id);
       const cls = ["s3-chip", on.has(e.id) ? "is-on" : "", c && !c.ok ? "is-bad" : ""].join(" ");
       const r = req.get(e.id);
-      return `<button type="button" class="${cls}" data-comp="${e.id}" title="Rule ${esc(e.rules)}${r ? " — " + esc(r) : ""}">
+      return `<button type="button" class="${cls}" data-testid="scene-component-${slug(e.id)}" data-comp="${e.id}" title="Rule ${esc(e.rules)}${r ? " — " + esc(r) : ""}">
         ${esc(e.name)}${r ? '<i class="s3-req" title="Required here">required</i>' : ""}</button>`;
     };
+    const nid = window.testIds();
     const nd = s.not_drawn.length
-      ? `<div class="s3-nd"><b>In your question but not drawn:</b>
-          ${s.not_drawn.map((m) => `<p><span class="rule">${esc(m.name)}</span> <span class="page">Rule ${esc(m.rules)}</span> — ${esc(m.why)}</p>`).join("")}</div>`
+      ? `<div class="s3-nd" data-testid="scene-not-drawn"><b>In your question but not drawn:</b>
+          ${s.not_drawn.map((m) => `<p data-testid="${nid("scene-not-drawn", m.name)}"><span class="rule">${esc(m.name)}</span> <span class="page">Rule ${esc(m.rules)}</span> — ${esc(m.why)}</p>`).join("")}</div>`
       : "";
-    const listed = cat.components.filter((e) => e.not_drawn).length;
+    // Folded by default: the answer leads, the extras are one click away. Open state survives re-renders.
+    const need = s.suggested.filter((x) => !on.has(x.id)).length;
     this.$(".s3-palette").innerHTML = `
-      <div class="s3-pal-head"><span class="tag">Components</span>
-        <span class="s3-sub">Switch on anything from the rules · ${listed} more are catalogued but not drawn (docs/3d-catalog.md)</span></div>
-      ${Object.entries(groups)
-        .map(([g, es]) => `<div class="s3-pal-row"><span class="s3-lbl">${esc(g)}</span><div class="s3-chips">${es.map(chip).join("")}</div></div>`)
-        .join("")}
+      <details class="s3-pal" data-testid="scene-components" ${this.palOpen ? "open" : ""}>
+        <summary data-testid="scene-components-toggle">Components <span class="s3-sub" data-testid="scene-components-count">${on.size} shown${need ? ` · ${need} required` : ""}</span></summary>
+        ${Object.entries(groups)
+          .map(([g, es]) => `<div class="s3-pal-row" data-testid="scene-components-group-${slug(g)}"><span class="s3-lbl">${esc(g)}</span><div class="s3-chips">${es.map(chip).join("")}</div></div>`)
+          .join("")}
+      </details>
       ${nd}`;
+    this.$(".s3-pal").addEventListener("toggle", (e) => (this.palOpen = e.target.open));
     this.$(".s3-palette").querySelectorAll("[data-comp]").forEach((b) =>
       b.addEventListener("click", () => {
         const id = b.dataset.comp;
@@ -613,7 +619,7 @@ class PlotView {
         if (!r.ok) throw new Error(await r.text());
         this.scene = await r.json();
       } catch (err) {
-        this.$(".s3-readout").innerHTML = `<p class="s3-warn">Could not recompute: ${esc(err.message)}</p>`;
+        this.$(".s3-readout").innerHTML = `<p class="s3-warn" data-testid="scene-error">Could not recompute: ${esc(err.message)}</p>`;
         return;
       }
       if (this.pinned?.setback) {
@@ -745,10 +751,10 @@ function componentOf(o) {
 }
 
 function legendRow(kind, a, b) {
-  if (!a && !b) return `<li class="s3-off"><i class="sw sw-${kind}"></i>${kind} · none required</li>`;
+  if (!a && !b) return `<li class="s3-off" data-testid="scene-open-space-${kind}"><i class="sw sw-${kind}"></i>${kind} · none required</li>`;
   const v = b && b.m !== a.m ? `${fmt(a.m)} m + ${fmt(b.m)} m` : b ? `${fmt(a.m)} m both sides` : `${fmt(a.m)} m`;
   const pin = kind === "side" ? "side_left" : kind;
-  return `<li data-pin="${pin}" title="Show rule text"><i class="sw sw-${kind}"></i>${kind} · <b>${v}</b><span class="s3-src">${esc(a.label.split("· ")[1])}</span></li>`;
+  return `<li data-testid="scene-open-space-${kind}" data-pin="${pin}" title="Show rule text"><i class="sw sw-${kind}"></i>${kind} · <b data-testid="scene-open-space-${kind}-value">${v}</b><span class="s3-src" data-testid="scene-open-space-${kind}-rule">${esc(a.label.split("· ")[1])}</span></li>`;
 }
 
 /** Footprint pieces: the whole box, or four wings around a courtyard of side `hole`. */

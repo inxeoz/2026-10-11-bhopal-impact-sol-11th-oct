@@ -85,6 +85,16 @@ impl SceneInput {
         }
     }
 
+    /// Use and building type the user picked after asking; they win over the question.
+    pub fn apply_details(&mut self, d: &crate::models::Details) {
+        if let Some(u) = d.use_type.as_deref().filter(|u| USES.contains(u)) {
+            self.use_type = Some(u.to_string());
+        }
+        if let Some(k) = d.building_type.as_deref().filter(|k| matches!(*k, "detached" | "semi-detached" | "row")) {
+            self.building_type = Some(k.to_string());
+        }
+    }
+
     /// Add catalog ids (e.g. picked by the model) to the ones already matched.
     pub fn add_components(&mut self, ids: &[String]) {
         let mut cur: Vec<String> = self.ids();

@@ -2,7 +2,7 @@
 //! No network: this is exactly the part the jury audits (numbers + abstention).
 
 use bhopal_sahayak::llm::Llm;
-use bhopal_sahayak::models::Lang;
+use bhopal_sahayak::models::{Details, Lang};
 use bhopal_sahayak::scene::SceneInput;
 use bhopal_sahayak::track1::Track1;
 use bhopal_sahayak::track2::{classify, Track2};
@@ -25,6 +25,33 @@ async fn front_open_space_q1() {
     assert!(!a.abstained, "Q1 should be answered");
     assert_eq!(a.facts["front_open_space_m"], "3.6", "10 m street -> 3.6 m");
     assert!(a.sources[0].label.contains("56(1)(a)"));
+}
+
+/// Details filled in after asking replace every assumed input, and change the answer.
+#[tokio::test]
+async fn details_replace_assumptions() {
+    let t = Track1::load(RULES).unwrap();
+    let llm = Llm::disabled();
+    let q = "My house faces a 10 m wide street and will be 9 m tall. How much open space do I leave at the front?";
+    let plain = t.solve(q, Lang::En, &llm).await;
+    let assumed: Vec<&str> = plain.facts["scene"]["assumed"].as_array().unwrap().iter().map(|a| a["field"].as_str().unwrap()).collect();
+    assert!(assumed.contains(&"plot_area") && assumed.contains(&"building_type"), "the bare question leaves plot details out: {assumed:?}");
+
+    let d = Details {
+        plot_area: Some(300.0),
+        frontage: Some(15.0),
+        street_width: Some(12.0),
+        height: Some(9.0),
+        use_type: Some("residential".into()),
+        building_type: Some("detached".into()),
+    };
+    let a = t.solve_with(q, Lang::En, &llm, &d).await;
+    let s = &a.facts["scene"];
+    assert_eq!(s["assumed"].as_array().unwrap().len(), 0, "nothing left to assume: {}", s["assumed"]);
+    assert_eq!(s["plot_area_sqm"], 300.0);
+    assert_eq!(s["building_type"], "detached");
+    // The street width in the details wins over the 10 m in the question.
+    assert_eq!(s["street_width_m"], 12.0);
 }
 
 #[tokio::test]

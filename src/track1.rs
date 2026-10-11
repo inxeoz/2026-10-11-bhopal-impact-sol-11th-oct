@@ -2,7 +2,7 @@ use crate::corpus::{tokenize, Corpus, Rule};
 use crate::facts::Facts;
 use crate::scene::{SceneInput, SPATIAL_WORDS};
 use crate::llm::Llm;
-use crate::models::{Answer, Lang, Source};
+use crate::models::{Answer, Details, Lang, Source};
 use regex::Regex;
 
 pub struct Track1 {
@@ -71,12 +71,18 @@ impl Track1 {
     }
 
     pub async fn solve(&self, question: &str, lang: Lang, llm: &Llm) -> Answer {
-        let mut a = self.answer(question, lang, llm).await;
+        self.solve_with(question, lang, llm, &Details::default()).await
+    }
+
+    /// `solve`, with plot details the user filled in after asking (they win over the question).
+    pub async fn solve_with(&self, question: &str, lang: Lang, llm: &Llm, details: &Details) -> Answer {
+        let mut a = self.answer(question, lang, llm, details).await;
         // A plot-shaped question also gets a 3D scene, built from the same rules.
         if !a.abstained {
-            let nums = Numbers::parse(question);
+            let nums = Numbers::parse(question).with_details(details);
             let q = question.to_lowercase();
             let mut input = SceneInput::from_question(question, &nums);
+            input.apply_details(details);
             let named = input.components.as_deref().is_some_and(|c| !c.is_empty()) || input.use_type.is_some();
             if nums.is_spatial() || named || mentions(&q, SPATIAL_WORDS) {
                 // The model may add catalog ids the keyword match missed (e.g. "a place to park
@@ -101,7 +107,7 @@ impl Track1 {
         a
     }
 
-    async fn answer(&self, question: &str, lang: Lang, llm: &Llm) -> Answer {
+    async fn answer(&self, question: &str, lang: Lang, llm: &Llm, details: &Details) -> Answer {
         let q = question.to_lowercase();
 
         if OUT_OF_SCOPE.iter().any(|k| q.contains(k)) {
@@ -134,14 +140,15 @@ impl Track1 {
             }
         }
 
-        let nums = Numbers::parse(question);
+        let nums = Numbers::parse(question).with_details(details);
         // "frontage" is not "front".
         let qf = q.replace("frontage", "");
 
         // Plot-shaped questions are answered from the same scene the 3D view draws, so the
         // text never contradicts the picture. Rule 56 front/rear lookups below stay as the
         // audited fast path for plain residential questions.
-        let input = SceneInput::from_question(question, &nums);
+        let mut input = SceneInput::from_question(question, &nums);
+        input.apply_details(details);
         let asked: Vec<String> = input
             .components
             .as_deref()
@@ -739,6 +746,19 @@ impl Numbers {
             || self.height.is_some()
             || self.frontage.is_some()
             || self.floors.is_some()
+    }
+
+    /// Fill in (and override with) what the user gave outside the question.
+    pub fn with_details(mut self, d: &Details) -> Numbers {
+        let pos = |v: Option<f64>| v.filter(|x| x.is_finite() && *x > 0.0);
+        self.plot_area = pos(d.plot_area).or(self.plot_area);
+        self.frontage = pos(d.frontage).or(self.frontage);
+        self.street_width = pos(d.street_width).or(self.street_width);
+        if let Some(h) = pos(d.height) {
+            self.height = Some(h);
+            self.floors = None; // a stated height replaces "3 floors x 3 m"
+        }
+        self
     }
 
     pub fn parse(q: &str) -> Numbers {

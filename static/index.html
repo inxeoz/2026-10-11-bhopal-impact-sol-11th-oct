@@ -7,59 +7,75 @@
   <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
-  <header class="topbar">
+  <header class="topbar" data-testid="header">
     <div class="wrap">
-      <div class="brand">
-        <span class="mark">RC</span>
-        <div>
-          <h1>Rules Checker</h1>
-          <p class="sub">M.P. Bhumi Vikas Rules, 2012 · Bhopal Impact Lab 2026</p>
-        </div>
+      <div class="brand" data-testid="header-brand">
+        <h1 data-testid="header-title">Rules Checker</h1>
+        <p class="sub" data-testid="header-subtitle">M.P. Bhumi Vikas Rules, 2012</p>
       </div>
-      <nav class="tracks" role="tablist">
-        <button class="tab" data-track="bhumi-vikas" role="tab">Building rules</button>
-        <button class="tab" data-track="draw" role="tab">Draw plot</button>
-        <button class="tab" data-track="doc" role="tab">Document</button>
+      <nav class="tracks" role="tablist" data-testid="nav-tabs">
+        <button class="tab" data-testid="nav-tab-building-rules" data-track="bhumi-vikas" role="tab">Building rules</button>
+        <button class="tab" data-testid="nav-tab-draw-plot" data-track="draw" role="tab">Draw plot</button>
+        <button class="tab" data-testid="nav-tab-document" data-track="doc" role="tab">Document</button>
       </nav>
     </div>
   </header>
 
-  <main class="wrap">
+  <main class="wrap" data-testid="main">
     <!-- TRACK 1 -->
-    <section id="view-bhumi-vikas" class="view" hidden>
-      <p class="lede">Ask about the M.P. Bhumi Vikas Rules, 2012. Every answer shows the rule number
-        and the exact text it came from — or says clearly that the rules are silent.</p>
+    <section id="view-bhumi-vikas" class="view" data-testid="view-building-rules" hidden>
+      <p class="lede" data-testid="ask-intro">Ask a question about the building rules. Every answer quotes the rule it comes from.</p>
 
-      <form id="ask-form" class="askbar" autocomplete="off">
-        <input id="q" type="text" placeholder="e.g. My plot is 200 sq m on a 9 m road. How much gap at the front?" />
+      <form id="ask-form" class="askbar" data-testid="ask-form" autocomplete="off">
+        <div class="ask-field" data-testid="ask-field">
+          <input id="q" type="text" data-testid="ask-input" placeholder="e.g. My plot is 200 sq m on a 9 m road. How much gap at the front?" />
+          <button type="button" id="mic" class="mic" data-testid="ask-voice" title="Record your question" aria-label="Record your question" aria-pressed="false" hidden>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>
+            </svg>
+            <span class="mic-stop" aria-hidden="true"></span>
+          </button>
+        </div>
         <div class="askbar-side">
-          <div class="lang" role="group" aria-label="Language">
-            <button type="button" class="lang-btn is-on" data-lang="en">EN</button>
-            <button type="button" class="lang-btn" data-lang="hi">हिं</button>
+          <div class="lang" role="group" aria-label="Language" data-testid="ask-language">
+            <button type="button" class="lang-btn is-on" data-testid="ask-language-english" data-lang="en">EN</button>
+            <button type="button" class="lang-btn" data-testid="ask-language-hindi" data-lang="hi">हिं</button>
           </div>
-          <button class="primary" type="submit">Ask</button>
-          <button class="ghost" type="button" id="reset" title="Clear the question and the answer">Reset</button>
+          <button class="primary" type="submit" data-testid="ask-submit">Ask</button>
+          <button class="ghost" type="button" id="reset" data-testid="ask-clear" title="Clear the question and the answer" hidden>Clear</button>
         </div>
       </form>
+      <!-- Voice bar: data-state="recording" while the mic is open, "saved" once a clip is kept. -->
+      <div id="voice-clip" class="voice-clip" data-testid="ask-voice-clip" data-state="saved" hidden>
+        <span class="clip-meter rec-only" data-testid="ask-voice-level" aria-hidden="true"><i></i></span>
+        <button type="button" id="clip-play" class="clip-play saved-only" data-testid="ask-voice-clip-play" title="Play recording" aria-label="Play recording">
+          <svg class="i-play" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>
+          <svg class="i-stop" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></svg>
+        </button>
+        <span class="clip-label">Recording <span id="clip-length" data-testid="ask-voice-clip-length">0:00</span></span>
+        <select id="mic-device" class="clip-device" data-testid="ask-voice-device" aria-label="Microphone" title="Microphone" hidden></select>
+        <button type="button" id="clip-cancel" class="clip-link rec-only" data-testid="ask-voice-cancel" title="Throw this recording away (Esc)">Cancel</button>
+        <button type="button" id="clip-again" class="clip-link saved-only" data-testid="ask-voice-clip-record-again">Record again</button>
+        <button type="button" id="clip-discard" class="clip-link saved-only" data-testid="ask-voice-clip-delete">Delete</button>
+        <button type="button" id="clip-stop" class="primary clip-send rec-only" data-testid="ask-voice-stop">Stop</button>
+        <button type="button" id="clip-send" class="primary clip-send saved-only" data-testid="ask-voice-clip-send" title="Send this recording to be turned into text">Send recording</button>
+      </div>
+      <p id="voice-status" class="voice-status" data-testid="ask-voice-status" role="status" aria-live="polite" hidden></p>
 
-      <div id="examples" class="examples"></div>
+      <div id="examples" class="examples" data-testid="examples"></div>
 
-      <div id="answer" class="answer-wrap"></div>
+      <div id="answer" class="answer-wrap" data-testid="answer"></div>
     </section>
 
     <!-- DRAW PLOT -->
-    <section id="view-draw" class="view" hidden>
-      <p class="lede">Draw your plot the way it is: any shape, the road on any side. Place the building,
-        balcony, garage, trees and the rest, and move them around. Every change is checked against the
-        M.P. Bhumi Vikas Rules, with the rule text for each problem.</p>
-      <div id="draw-root"></div>
+    <section id="view-draw" class="view" data-testid="view-draw-plot" hidden>
+      <p class="lede" data-testid="draw-intro">Draw your plot and place the building. Every change is checked against the rules.</p>
+      <div id="draw-root" data-testid="draw-root"></div>
     </section>
 
     <!-- DOCUMENT VIEWER -->
-    <section id="view-doc" class="view" hidden>
-      <p class="lede">The full text of the M.P. Bhumi Vikas Rules, 2012 (consolidated to 6 March 2025), page by page.
-        Every <b>Open Document</b> button in the app brings you here with the cited line highlighted.</p>
-      <div id="doc-root"></div>
+    <section id="view-doc" class="view" data-testid="view-document" hidden>
+      <div id="doc-root" data-testid="doc-root"></div>
     </section>
   </main>
 

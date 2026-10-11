@@ -140,6 +140,23 @@ pub struct AskRequest {
     pub track: String,
     pub question: String,
     pub lang: Option<Lang>,
+    /// Plot details the user filled in after the question (the browser asks for whatever the
+    /// question left out, instead of the tool assuming it).
+    #[serde(default)]
+    pub details: Details,
+}
+
+/// Plot details given outside the question text. Each one, when set, wins over the question.
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Details {
+    pub plot_area: Option<f64>,
+    pub frontage: Option<f64>,
+    pub street_width: Option<f64>,
+    pub height: Option<f64>,
+    /// "residential" | "business" | … (same values as the 3D scene)
+    pub use_type: Option<String>,
+    /// "detached" | "semi-detached" | "row"
+    pub building_type: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

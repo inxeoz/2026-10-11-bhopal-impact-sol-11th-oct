@@ -41,6 +41,8 @@ const KINDS = {
 };
 /** Defaults for heights and slopes the user can step up and down. */
 const DEFAULT_H = { garage: 2.6, gate: 1.8, tree: 4, custom: 3 };
+// The first six are on the toolbar; the rest sit under "More".
+const ADD_TOP = 6;
 const ADD = [
   ["building", "Building"], ["balcony", "Balcony"], ["garage", "Garage"], ["staircase", "Stair"], ["lift", "Lift"],
   ["shaft", "Shaft"], ["courtyard", "Courtyard"], ["septic_tank", "Septic"], ["parking_bay", "Parking"], ["tree", "Tree"],
@@ -53,6 +55,8 @@ const EDGE_COLOR = { front: "#2f6f4f", rear: "#8a5a00", side: "#3d6fa8" };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (v) => (v == null ? "—" : Number(v).toFixed(2).replace(/\.?0+$/, ""));
 const clone = (o) => JSON.parse(JSON.stringify(o));
+const slug = (v) => window.slug(v);
+const addBtn = ([k, t]) => `<button type="button" data-testid="draw-add-${slug(k)}" data-tool="${k}" title="Add ${esc(KINDS[k].name)}">${t}</button>`;
 
 function template() {
   return {
@@ -98,42 +102,53 @@ class DrawApp {
     this.vb = null;
 
     root.innerHTML = `
-      <div class="dp">
-        <div class="dp-tools">
-          <div class="dp-group">
-            <button type="button" data-tool="select" title="Select, move, resize (V)">Select</button>
-            <button type="button" data-tool="plot" title="Draw a new plot outline: click corners, click the first corner to close (P)">Draw plot</button>
-            <button type="button" data-tool="road" title="Click a plot edge to mark it as facing the road (R)">Road edge</button>
+      <div class="dp" data-testid="draw">
+        <div class="dp-tools" data-testid="draw-toolbar">
+          <div class="dp-group" data-testid="draw-tools">
+            <button type="button" data-testid="draw-tool-select" data-tool="select" title="Select, move, resize (V). + / − change height, [ / ] roof slope, Delete removes">Select</button>
+            <button type="button" data-testid="draw-tool-draw-plot" data-tool="plot" title="Draw a new plot outline: click corners, click the first corner to close (P)">Draw plot</button>
+            <button type="button" data-testid="draw-tool-road-edge" data-tool="road" title="Click a plot edge to mark it as facing the road (R)">Road edge</button>
           </div>
-          <div class="dp-group dp-add"><span class="dp-add-l">Add</span>${ADD.map(([k, t]) => `<button type="button" data-tool="${k}" title="Add ${esc(KINDS[k].name)}">+ ${t}</button>`).join("")}</div>
-          <div class="dp-group dp-actions">
-            <button type="button" data-act="undo" title="Undo (Ctrl+Z)">Undo</button>
-            <button type="button" data-act="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
-            <button type="button" data-act="fit" title="Fit the plot in view">Fit</button>
-            <button type="button" data-act="reset" title="Start again from the sample plot">Reset</button>
-            <button type="button" data-act="export" title="Download this layout as JSON">Export</button>
-            <label class="dp-import" title="Load a layout JSON">Import<input type="file" accept="application/json" hidden></label>
+          <div class="dp-group dp-add" data-testid="draw-add"><span class="dp-add-l">Add</span>${ADD.slice(0, ADD_TOP).map(addBtn).join("")}
+            <details class="dp-menu" data-testid="draw-add-more-menu"><summary data-testid="draw-add-more">More</summary><div class="dp-pop" data-testid="draw-add-more-list">${ADD.slice(ADD_TOP).map(addBtn).join("")}</div></details>
+          </div>
+          <div class="dp-group dp-actions" data-testid="draw-actions">
+            <button type="button" data-testid="draw-undo" data-act="undo" title="Undo (Ctrl+Z)">Undo</button>
+            <button type="button" data-testid="draw-redo" data-act="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+            <button type="button" data-testid="draw-fit" data-act="fit" title="Fit the plot in view">Fit</button>
+            <details class="dp-menu dp-menu-r" data-testid="draw-file-menu"><summary data-testid="draw-file">File</summary><div class="dp-pop" data-testid="draw-file-list">
+              <button type="button" data-testid="draw-export" data-act="export" title="Download this layout as JSON">Export layout</button>
+              <label class="dp-import" data-testid="draw-import" title="Load a layout JSON">Import layout<input type="file" data-testid="draw-import-file" accept="application/json" hidden></label>
+              <button type="button" data-testid="draw-start-over" data-act="reset" title="Start again from the sample plot">Start over</button>
+            </div></details>
           </div>
         </div>
-        <div class="dp-main">
-          <div class="dp-canvas">
-            <svg class="dp-svg" preserveAspectRatio="xMidYMid meet"></svg>
-            <div class="dp-hint"></div>
+        <div class="dp-main" data-testid="draw-main">
+          <div class="dp-canvas" data-testid="draw-canvas">
+            <svg class="dp-svg" data-testid="plan" preserveAspectRatio="xMidYMid meet"></svg>
+            <div class="dp-hint" data-testid="draw-hint"></div>
           </div>
-          <aside class="dp-side">
-            <div class="dp-check">
-              <label class="dp-live"><input type="checkbox" checked> Live check</label>
-              <button type="button" class="primary dp-run">Check now</button>
+          <aside class="dp-side" data-testid="draw-side">
+            <div class="dp-result" data-testid="draw-result">
+              <div class="dp-status" data-testid="draw-status"></div>
+              <div class="dp-issues" data-testid="draw-issues"></div>
+              <div class="dp-check" data-testid="draw-check">
+                <label class="dp-live" data-testid="draw-live-check"><input type="checkbox" data-testid="draw-live-check-toggle" checked> Check as I edit</label>
+                <button type="button" class="primary dp-run" data-testid="draw-check-now" hidden>Check now</button>
+              </div>
             </div>
-            <div class="dp-status"></div>
-            <div class="dp-props"></div>
-            <div class="dp-issues"></div>
+            <div class="dp-props" data-testid="draw-props"></div>
           </aside>
         </div>
-        <div class="dp-3d-head"><span class="tag">Section</span><span class="dp-sub">Cut through the selected building, from the road inwards · levels in m above sea level</span></div>
-        <div class="dp-section"></div>
-        <div class="dp-3d-head"><span class="tag">3D preview</span><span class="dp-sub">Red = breaks a rule · floors drawn ${FLOOR_H} m apart</span></div>
-        <div class="dp-3d"></div>
+        <div class="dp-views" data-testid="draw-views">
+          <div class="dp-views-bar" role="tablist" data-testid="draw-views-tabs">
+            <button type="button" class="is-on" data-testid="draw-view-3d-tab" data-pane="3d" role="tab">3D</button>
+            <button type="button" data-testid="draw-view-section-tab" data-pane="section" role="tab" title="Cut through the selected building, from the road inwards">Section</button>
+            <span class="dp-sub" data-testid="draw-views-legend">Red breaks a rule · levels in m above sea level</span>
+          </div>
+          <div class="dp-3d" data-testid="draw-view-3d" data-pane-body="3d"></div>
+          <div class="dp-section" data-testid="draw-view-section" data-pane-body="section" hidden></div>
+        </div>
       </div>`;
     this.$ = (s) => root.querySelector(s);
     this.svg = this.$(".dp-svg");
@@ -143,10 +158,20 @@ class DrawApp {
     this.$(".dp-import input").addEventListener("change", (e) => this.importFile(e.target.files[0]));
     this.$(".dp-live input").addEventListener("change", (e) => {
       this.live = e.target.checked;
+      this.$(".dp-run").hidden = this.live;
       if (this.live) this.runCheck();
       this.renderStatus();
     });
     this.$(".dp-run").addEventListener("click", () => this.runCheck());
+    root.querySelectorAll("[data-pane]").forEach((b) =>
+      b.addEventListener("click", () => {
+        root.querySelectorAll("[data-pane]").forEach((x) => x.classList.toggle("is-on", x === b));
+        root.querySelectorAll("[data-pane-body]").forEach((x) => (x.hidden = x.dataset.paneBody !== b.dataset.pane));
+      })
+    );
+    // Close a menu after a pick, and when clicking elsewhere.
+    root.querySelectorAll(".dp-pop").forEach((p) => p.addEventListener("click", (e) => e.target.closest("button") && p.parentElement.removeAttribute("open")));
+    document.addEventListener("click", (e) => root.querySelectorAll(".dp-menu[open]").forEach((m) => m.contains(e.target) || m.removeAttribute("open")));
 
     this.svg.addEventListener("pointerdown", (e) => this.down(e));
     this.svg.addEventListener("pointermove", (e) => this.move(e));
@@ -280,10 +305,11 @@ class DrawApp {
     this.tool = t;
     this.draft = null;
     this.root.querySelectorAll("[data-tool]").forEach((b) => b.classList.toggle("is-on", b.dataset.tool === t));
+    this.root.querySelector(".dp-menu summary").classList.toggle("is-on", ADD.slice(ADD_TOP).some(([k]) => k === t));
     const hints = {
-      select: "Drag blocks to move, corners to resize; drag plot corners to reshape, double-click an edge to add one. + / − change the selected block's height, [ / ] its roof slope. Click a road to select it. Delete removes the selection.",
-      plot: "Click to place each corner of the plot. Click the first corner (or press Enter) to close it. Esc cancels.",
-      road: "Click a plot edge to mark it as facing the road. Click again to unmark. Corner plots can have two.",
+      select: "Drag to move or resize. Double-click a plot edge to add a corner.",
+      plot: "Click each corner. Click the first corner again to close.",
+      road: "Click a plot edge to mark it as the road side.",
       electric_line: "Click two points: where the power line starts and where it ends.",
     };
     this.$(".dp-hint").textContent = hints[t] ?? `Click on the plan to place a ${KINDS[t]?.name.toLowerCase() ?? "block"}.`;
@@ -643,7 +669,7 @@ class DrawApp {
       grid += `<line x1="${x}" y1="${gy}" x2="${x}" y2="${gy + vh}" class="${Math.round(x) % (step * 5) === 0 ? "g2" : "g1"}"/>`;
     for (let y = Math.floor(gy / step) * step; y < gy + vh; y += step)
       grid += `<line x1="${gx}" y1="${y}" x2="${gx + vw}" y2="${y}" class="${Math.round(y) % (step * 5) === 0 ? "g2" : "g1"}"/>`;
-    s += `<g class="dp-grid">${grid}</g>`;
+    s += `<g class="dp-grid" data-testid="plan-grid">${grid}</g>`;
 
     const items = [...L.items].sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
     for (const it of items.filter((i) => i.kind === "water_body")) s += this.svgItem(it, bad, fs);
@@ -652,21 +678,21 @@ class DrawApp {
     for (const i of L.road_edges.filter((i) => i < n)) {
       const [a2, b2] = roadQuad(P, i, L.street_width);
       const a = P[i], b = P[(i + 1) % n];
-      s += `<polygon points="${[a, b, b2, a2].map((p) => p.join(",")).join(" ")}" class="dp-road ${this.sel?.road === i ? "is-sel" : ""}" data-road="${i}"/>`;
+      s += `<polygon points="${[a, b, b2, a2].map((p) => p.join(",")).join(" ")}" class="dp-road ${this.sel?.road === i ? "is-sel" : ""}" data-testid="plan-road-${i + 1}" data-road="${i}"/>`;
       const m = [(a2[0] + b2[0] + a[0] + b[0]) / 4, (a2[1] + b2[1] + a[1] + b[1]) / 4];
-      s += `<text x="${m[0]}" y="${m[1]}" class="dp-road-t" font-size="${fs}">${fmt(L.street_width)} m road · ${fmt(L.road_level)} m</text>`;
+      s += `<text x="${m[0]}" y="${m[1]}" class="dp-road-t" data-testid="plan-road-${i + 1}-label" font-size="${fs}">${fmt(L.street_width)} m road · ${fmt(L.road_level)} m</text>`;
     }
 
     // plot
-    s += `<polygon points="${P.map((p) => p.join(",")).join(" ")}" class="dp-plot ${this.sel?.plot ? "is-sel" : ""}"/>`;
-    if (c?.buildable?.length) s += `<polygon points="${c.buildable.map((p) => p.join(",")).join(" ")}" class="dp-buildable"/>`;
+    s += `<polygon points="${P.map((p) => p.join(",")).join(" ")}" class="dp-plot ${this.sel?.plot ? "is-sel" : ""}" data-testid="plan-plot"/>`;
+    if (c?.buildable?.length) s += `<polygon points="${c.buildable.map((p) => p.join(",")).join(" ")}" class="dp-buildable" data-testid="plan-buildable-area"/>`;
     // contours of the fitted ground plane, clipped to the plot
     if (c?.sloping) s += contours(P, c.plane, fs);
     // open-space lines
-    for (const e of c?.edges ?? []) {
+    for (const [i, e] of (c?.edges ?? []).entries()) {
       if (e.required <= 0) continue;
       const [a, b] = e.line;
-      s += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="dp-setback" stroke="${EDGE_COLOR[e.class]}"/>`;
+      s += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="dp-setback" data-testid="plan-setback-${i + 1}" stroke="${EDGE_COLOR[e.class]}"/>`;
     }
     // edge labels: class, required distance, length
     for (let i = 0; i < n; i++) {
@@ -677,8 +703,8 @@ class DrawApp {
       const ang = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
       const up = ang > 90 || ang < -90 ? ang + 180 : ang;
       const txt = e ? `${e.class}${e.required ? ` ≥ ${fmt(e.required)} m` : ""} · ${fmt(len)} m` : `${fmt(len)} m`;
-      s += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="dp-edge ${L.road_edges.includes(i) ? "is-road" : ""}" data-edge="${i}"/>`;
-      s += `<text x="${m[0]}" y="${m[1]}" transform="rotate(${up} ${m[0]} ${m[1]}) translate(0 ${-0.6 * fs})" class="dp-edge-t" font-size="${fs * 0.95}" fill="${e ? EDGE_COLOR[e.class] : "#5b6166"}">${txt}</text>`;
+      s += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="dp-edge ${L.road_edges.includes(i) ? "is-road" : ""}" data-testid="plan-edge-${i + 1}" data-edge="${i}"/>`;
+      s += `<text x="${m[0]}" y="${m[1]}" transform="rotate(${up} ${m[0]} ${m[1]}) translate(0 ${-0.6 * fs})" class="dp-edge-t" data-testid="plan-edge-${i + 1}-label" font-size="${fs * 0.95}" fill="${e ? EDGE_COLOR[e.class] : "#5b6166"}">${txt}</text>`;
     }
 
     for (const it of items.filter((i) => i.kind !== "water_body")) s += this.svgItem(it, bad, fs);
@@ -689,19 +715,19 @@ class DrawApp {
     if (showLevels) P.forEach((p, i) => {
       const lv = L.plot_levels?.[i];
       if (lv == null) return;
-      s += `<text x="${p[0]}" y="${p[1]}" dx="${9 * k}" dy="${-7 * k}" class="dp-level-t" font-size="${fs * 0.9}">▲ ${fmt(lv)}</text>`;
+      s += `<text x="${p[0]}" y="${p[1]}" dx="${9 * k}" dy="${-7 * k}" class="dp-level-t" data-testid="plan-corner-${i + 1}-level" font-size="${fs * 0.9}">▲ ${fmt(lv)}</text>`;
     });
     // plot corners
     if (this.tool === "select")
       P.forEach((p, i) => {
-        s += `<circle cx="${p[0]}" cy="${p[1]}" r="${6 * k}" class="dp-vertex ${this.sel?.vertex === i ? "is-sel" : ""}" data-vertex="${i}"/>`;
+        s += `<circle cx="${p[0]}" cy="${p[1]}" r="${6 * k}" class="dp-vertex ${this.sel?.vertex === i ? "is-sel" : ""}" data-testid="plan-corner-${i + 1}" data-vertex="${i}"/>`;
       });
 
     // drafts
     if (this.draft) {
       const pts = [...this.draft, ...(this.cursor ? [this.cursor] : [])];
-      s += `<polyline points="${pts.map((p) => p.join(",")).join(" ")}" class="dp-draft"/>`;
-      this.draft.forEach((p, i) => (s += `<circle cx="${p[0]}" cy="${p[1]}" r="${(i ? 4 : 7) * k}" class="dp-draft-pt"/>`));
+      s += `<polyline points="${pts.map((p) => p.join(",")).join(" ")}" class="dp-draft" data-testid="plan-draft"/>`;
+      this.draft.forEach((p, i) => (s += `<circle cx="${p[0]}" cy="${p[1]}" r="${(i ? 4 : 7) * k}" class="dp-draft-pt" data-testid="plan-draft-point-${i + 1}"/>`));
     }
 
     this.svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
@@ -712,33 +738,34 @@ class DrawApp {
     const K = KINDS[it.kind] ?? {};
     const sel = this.sel?.item === it.id;
     const cls = `dp-item ${bad.has(it.id) ? "is-bad" : ""} ${sel ? "is-sel" : ""}`;
+    const t = `plan-item-${slug(it.id)}`; // item ids are unique: "building-1", "tree-3" …
     const k = this.px();
     if (K.line) {
-      let s = `<line x1="${it.a[0]}" y1="${it.a[1]}" x2="${it.b[0]}" y2="${it.b[1]}" class="dp-line-hit" data-item="${it.id}"/>`;
-      s += `<line x1="${it.a[0]}" y1="${it.a[1]}" x2="${it.b[0]}" y2="${it.b[1]}" class="dp-line ${cls}" data-item="${it.id}"/>`;
+      let s = `<line x1="${it.a[0]}" y1="${it.a[1]}" x2="${it.b[0]}" y2="${it.b[1]}" class="dp-line-hit" data-testid="${t}-hit" data-item="${it.id}"/>`;
+      s += `<line x1="${it.a[0]}" y1="${it.a[1]}" x2="${it.b[0]}" y2="${it.b[1]}" class="dp-line ${cls}" data-testid="${t}" data-item="${it.id}"/>`;
       const m = [(it.a[0] + it.b[0]) / 2, (it.a[1] + it.b[1]) / 2];
-      s += `<text x="${m[0]}" y="${m[1]}" class="dp-item-t" font-size="${fs}" dy="${-0.5 * fs}">${esc(it.name)} · ${esc({ lv: "LV", hv: "≤33 kV", ehv: ">33 kV" }[it.voltage] ?? "")}</text>`;
-      if (sel) for (const end of ["a", "b"]) s += `<circle cx="${it[end][0]}" cy="${it[end][1]}" r="${6 * k}" class="dp-handle" data-end="${end}" data-line="${it.id}"/>`;
+      s += `<text x="${m[0]}" y="${m[1]}" class="dp-item-t" data-testid="${t}-label" font-size="${fs}" dy="${-0.5 * fs}">${esc(it.name)} · ${esc({ lv: "LV", hv: "≤33 kV", ehv: ">33 kV" }[it.voltage] ?? "")}</text>`;
+      if (sel) for (const end of ["a", "b"]) s += `<circle cx="${it[end][0]}" cy="${it[end][1]}" r="${6 * k}" class="dp-handle" data-testid="${t}-handle-${end === "a" ? "start" : "end"}" data-end="${end}" data-line="${it.id}"/>`;
       return s;
     }
     const x = it.x - it.w / 2, y = it.y - it.d / 2;
     let s = K.round
-      ? `<ellipse cx="${it.x}" cy="${it.y}" rx="${it.w / 2}" ry="${it.d / 2}" fill="${K.fill}" stroke="${K.stroke}" class="${cls}" data-item="${it.id}"/>`
-      : `<rect x="${x}" y="${y}" width="${it.w}" height="${it.d}" fill="${K.fill}" stroke="${K.stroke}" class="${cls} dp-k-${it.kind}" data-item="${it.id}"/>`;
+      ? `<ellipse cx="${it.x}" cy="${it.y}" rx="${it.w / 2}" ry="${it.d / 2}" fill="${K.fill}" stroke="${K.stroke}" class="${cls}" data-testid="${t}" data-item="${it.id}"/>`
+      : `<rect x="${x}" y="${y}" width="${it.w}" height="${it.d}" fill="${K.fill}" stroke="${K.stroke}" class="${cls} dp-k-${it.kind}" data-testid="${t}" data-item="${it.id}"/>`;
     const big = Math.min(it.w, it.d) / k > 34;
     const ack = it.kind === "custom" ? this.check?.custom?.find((a) => a.id === it.id) : null;
     if (it.kind === "custom")
-      s += `<text x="${it.x}" y="${it.y}" class="dp-item-t" font-size="${fs}" dy="${0.35 * fs}">${esc(it.name)}${ack?.as_name ? ` ≈ ${esc(ack.as_name)}${ack.checked ? "" : " (off)"}` : " · no rule"}</text>`;
+      s += `<text x="${it.x}" y="${it.y}" class="dp-item-t" data-testid="${t}-label" font-size="${fs}" dy="${0.35 * fs}">${esc(it.name)}${ack?.as_name ? ` ≈ ${esc(ack.as_name)}${ack.checked ? "" : " (off)"}` : " · no rule"}</text>`;
     else if (it.kind === "building" || (big && it.kind !== "tree"))
-      s += `<text x="${it.x}" y="${it.y}" class="dp-item-t" font-size="${fs}" dy="${0.35 * fs}">${esc(it.name)}${it.kind === "building" ? ` · ${it.floors || 1}F${(() => {
+      s += `<text x="${it.x}" y="${it.y}" class="dp-item-t" data-testid="${t}-label" font-size="${fs}" dy="${0.35 * fs}">${esc(it.name)}${it.kind === "building" ? ` · ${it.floors || 1}F${(() => {
         const lv = this.check?.levels?.find((x) => x.id === it.id);
         return lv ? ` · ${fmt(lv.rule_height)} m` : "";
       })()}` : ""}</text>`;
     if (sel) {
-      s += `<text x="${it.x}" y="${y - 0.5 * fs}" class="dp-dim-t" font-size="${fs}">${fmt(it.w)} × ${fmt(it.d)} m</text>`;
+      s += `<text x="${it.x}" y="${y - 0.5 * fs}" class="dp-dim-t" data-testid="${t}-size" font-size="${fs}">${fmt(it.w)} × ${fmt(it.d)} m</text>`;
       if (!K.round)
         for (const [cx, cy, c] of [[x, y, "nw"], [x + it.w, y, "ne"], [x + it.w, y + it.d, "se"], [x, y + it.d, "sw"]])
-          s += `<rect x="${cx - 5 * k}" y="${cy - 5 * k}" width="${10 * k}" height="${10 * k}" class="dp-handle" data-handle="${it.id}" data-corner="${c}"/>`;
+          s += `<rect x="${cx - 5 * k}" y="${cy - 5 * k}" width="${10 * k}" height="${10 * k}" class="dp-handle" data-testid="${t}-handle-${c}" data-handle="${it.id}" data-corner="${c}"/>`;
     }
     return s;
   }
@@ -749,7 +776,7 @@ class DrawApp {
     const L = this.layout, c = this.check;
     const b = (this.sel?.item && this.item(this.sel.item)?.kind === "building" && this.item(this.sel.item)) || L.items.find((i) => i.kind === "building");
     if (!c || c.error || !c.plane || !b || !L.road_edges.length) {
-      box.innerHTML = '<p class="dp-small" style="padding:10px 12px">Add a building and a road edge to see the section.</p>';
+      box.innerHTML = '<p class="dp-small" data-testid="draw-section-empty" style="padding:10px 12px">Add a building and a road edge to see the section.</p>';
       return;
     }
     const P = L.plot, n = P.length;
@@ -780,77 +807,85 @@ class DrawApp {
     const stH = b.stilt ? 2.6 : 0;
     let g = "";
     // ground: road then the plot profile
-    g += `<polygon points="${X(s0)},${Y(road)} ${X(front)},${Y(road)} ${X(front)},${Y(at(front))} ${X(rear)},${Y(at(rear))} ${X(rear)},${Y(z0)} ${X(s0)},${Y(z0)}" class="ds-earth"/>`;
-    g += `<line x1="${X(s0)}" y1="${Y(road)}" x2="${X(front)}" y2="${Y(road)}" class="ds-road"/>`;
-    g += `<text x="${X(s0) + 4}" y="${Y(road) + 18}" class="ds-t">road ${fmt(road)}</text>`;
+    g += `<polygon points="${X(s0)},${Y(road)} ${X(front)},${Y(road)} ${X(front)},${Y(at(front))} ${X(rear)},${Y(at(rear))} ${X(rear)},${Y(z0)} ${X(s0)},${Y(z0)}" class="ds-earth" data-testid="section-ground"/>`;
+    g += `<line x1="${X(s0)}" y1="${Y(road)}" x2="${X(front)}" y2="${Y(road)}" class="ds-road" data-testid="section-road"/>`;
+    g += `<text x="${X(s0) + 4}" y="${Y(road) + 18}" class="ds-t" data-testid="section-road-level">road ${fmt(road)}</text>`;
     // plinth, stilt, floors
-    g += `<rect x="${X(bx0)}" y="${Y(lv.floor)}" width="${(bx1 - bx0) * k}" height="${(lv.floor - Math.min(at(bx0), at(bx1))) * k}" class="ds-plinth"/>`;
+    g += `<rect x="${X(bx0)}" y="${Y(lv.floor)}" width="${(bx1 - bx0) * k}" height="${(lv.floor - Math.min(at(bx0), at(bx1))) * k}" class="ds-plinth" data-testid="section-plinth"/>`;
     const floors = Math.max(1, b.floors || 1);
-    if (stH) g += `<rect x="${X(bx0)}" y="${Y(lv.floor + stH)}" width="${(bx1 - bx0) * k}" height="${stH * k}" class="ds-stilt"/>`;
+    if (stH) g += `<rect x="${X(bx0)}" y="${Y(lv.floor + stH)}" width="${(bx1 - bx0) * k}" height="${stH * k}" class="ds-stilt" data-testid="section-stilt"/>`;
     const fh = b.floor_height || FLOOR_H;
     for (let f = 0; f < floors; f++) {
       const zb = lv.floor + stH + f * fh;
-      g += `<rect x="${X(bx0)}" y="${Y(zb + fh)}" width="${(bx1 - bx0) * k}" height="${fh * k}" class="ds-floor ${c.bad?.includes(b.id) ? "bad" : ""}"/>`;
+      g += `<rect x="${X(bx0)}" y="${Y(zb + fh)}" width="${(bx1 - bx0) * k}" height="${fh * k}" class="ds-floor ${c.bad?.includes(b.id) ? "bad" : ""}" data-testid="section-floor-${f + 1}"/>`;
     }
     if (lv.top > lv.roof + 0.01 && b.roof_pitch > 0)
-      g += `<polygon points="${X(bx0)},${Y(lv.roof)} ${X(bx1)},${Y(lv.roof)} ${X(0)},${Y(lv.top)}" class="ds-roof"/>`;
+      g += `<polygon points="${X(bx0)},${Y(lv.roof)} ${X(bx1)},${Y(lv.roof)} ${X(0)},${Y(lv.top)}" class="ds-roof" data-testid="section-roof"/>`;
     else if (b.parapet > 0)
-      g += `<rect x="${X(bx0)}" y="${Y(lv.roof + b.parapet)}" width="${(bx1 - bx0) * k}" height="${b.parapet * k}" class="ds-parapet"/>`;
-    if (b.basement) g += `<rect x="${X(bx0)}" y="${Y(lv.floor)}" width="${(bx1 - bx0) * k}" height="${2.7 * k}" class="ds-basement"/>`;
+      g += `<rect x="${X(bx0)}" y="${Y(lv.roof + b.parapet)}" width="${(bx1 - bx0) * k}" height="${b.parapet * k}" class="ds-parapet" data-testid="section-parapet"/>`;
+    if (b.basement) g += `<rect x="${X(bx0)}" y="${Y(lv.floor)}" width="${(bx1 - bx0) * k}" height="${2.7 * k}" class="ds-basement" data-testid="section-basement"/>`;
     // reference level and the height that counts
-    g += `<line x1="${X(s0)}" y1="${Y(ref)}" x2="${X(s1)}" y2="${Y(ref)}" class="ds-ref"/>`;
-    g += `<text x="${X(s1) - 4}" y="${Y(ref) + 16}" class="ds-t ds-ref-t" text-anchor="end">reference ${fmt(ref)} (Rule 2(34))</text>`;
+    g += `<line x1="${X(s0)}" y1="${Y(ref)}" x2="${X(s1)}" y2="${Y(ref)}" class="ds-ref" data-testid="section-reference-level"/>`;
+    g += `<text x="${X(s1) - 4}" y="${Y(ref) + 16}" class="ds-t ds-ref-t" data-testid="section-reference-level-label" text-anchor="end">reference ${fmt(ref)} (Rule 2(34))</text>`;
     const dx = X(bx1) + 22;
-    g += `<line x1="${dx}" y1="${Y(ref)}" x2="${dx}" y2="${Y(lv.top)}" class="ds-dim"/>`;
+    g += `<line x1="${dx}" y1="${Y(ref)}" x2="${dx}" y2="${Y(lv.top)}" class="ds-dim" data-testid="section-height-dimension"/>`;
     g += `<line x1="${dx - 5}" y1="${Y(lv.top)}" x2="${dx + 5}" y2="${Y(lv.top)}" class="ds-dim"/><line x1="${dx - 5}" y1="${Y(ref)}" x2="${dx + 5}" y2="${Y(ref)}" class="ds-dim"/>`;
-    g += `<text x="${dx + 8}" y="${(Y(ref) + Y(lv.top)) / 2}" class="ds-t ds-h">${fmt(lv.rule_height)} m for the rules${stH ? " (stilt excluded)" : ""}</text>`;
-    g += `<text x="${X(bx0) - 6}" y="${Y(lv.floor) + 4}" class="ds-t" text-anchor="end">floor ${fmt(lv.floor)}</text>`;
-    g += `<text x="${X(bx0) - 6}" y="${Y(lv.roof) + 4}" class="ds-t" text-anchor="end">roof ${fmt(lv.roof)}</text>`;
-    g += `<text x="${X(front)}" y="${H - 14}" class="ds-t" text-anchor="middle">plot edge</text>`;
-    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="ds-svg">${g}</svg>`;
+    g += `<text x="${dx + 8}" y="${(Y(ref) + Y(lv.top)) / 2}" class="ds-t ds-h" data-testid="section-rule-height">${fmt(lv.rule_height)} m for the rules${stH ? " (stilt excluded)" : ""}</text>`;
+    g += `<text x="${X(bx0) - 6}" y="${Y(lv.floor) + 4}" class="ds-t" data-testid="section-floor-level" text-anchor="end">floor ${fmt(lv.floor)}</text>`;
+    g += `<text x="${X(bx0) - 6}" y="${Y(lv.roof) + 4}" class="ds-t" data-testid="section-roof-level" text-anchor="end">roof ${fmt(lv.roof)}</text>`;
+    g += `<text x="${X(front)}" y="${H - 14}" class="ds-t" data-testid="section-plot-edge" text-anchor="middle">plot edge</text>`;
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="ds-svg" data-testid="section-svg">${g}</svg>`;
   }
 
   renderStatus() {
     const c = this.check;
     const box = this.$(".dp-status");
-    if (!c) return (box.innerHTML = '<p class="spinner">Checking…</p>');
-    if (c.error) return (box.innerHTML = `<p class="s3-warn">Could not check: ${esc(c.error)}</p>`);
-    const meter = (m) =>
+    if (!c) return (box.innerHTML = '<p class="spinner" data-testid="draw-status-checking">Checking…</p>');
+    if (c.error) return (box.innerHTML = `<p class="s3-warn" data-testid="draw-status-error">Could not check: ${esc(c.error)}</p>`);
+    const meter = (m, key) =>
       m && m.limit != null
-        ? `<div class="s3-far ${m.ok ? "" : "over"}"><div class="s3-far-head"><span>${esc(m.label)}</span><b>${fmt(m.used)} / ${fmt(m.limit)}</b></div>
+        ? `<div class="s3-far ${m.ok ? "" : "over"}" data-testid="draw-meter-${key}"><div class="s3-far-head"><span>${esc(m.label)}</span><b data-testid="draw-meter-${key}-value">${fmt(m.used)} / ${fmt(m.limit)}</b></div>
            <span class="s3-far-bar"><span style="width:${Math.min(100, (m.used / Math.max(m.limit, 0.01)) * 100)}%"></span></span></div>`
         : m
-          ? `<div class="s3-small">${esc(m.label)}: <b>${fmt(m.used)}</b></div>`
+          ? `<div class="s3-small" data-testid="draw-meter-${key}"><span>${esc(m.label)}:</span> <b data-testid="draw-meter-${key}-value">${fmt(m.used)}</b></div>`
           : "";
     box.innerHTML = `
-      <div class="dp-badge ${c.ok ? "ok" : "no"}">${c.ok ? "Within these rules" : `${c.errors} rule${c.errors === 1 ? "" : "s"} broken`}${this.stale ? " · changed since last check" : ""}</div>
-      <div class="s3-small">${esc(c.envelope)}</div>
-      <div class="s3-small">Plot ${fmt(c.plot_area)} sq m · road frontage ${fmt(c.frontage)} m · tallest ${fmt(c.max_height)} m for the rules</div>
-      <div class="s3-small">Road ${fmt(c.road_level)} m · reference level <b>${fmt(c.reference_level)} m</b> · ${c.sloping ? `sloping, about 1:${c.slope ? Math.round(1 / c.slope) : "—"}` : "level site"}</div>
-      ${meter(c.far)}${meter(c.coverage)}
-      ${c.assumed?.length ? `<p class="s3-assumed"><b>Assumed:</b> ${c.assumed.map(esc).join(" · ")}</p>` : ""}`;
+      <div class="dp-badge ${c.ok ? "ok" : "no"}" data-testid="draw-status-badge">${c.ok ? "Within these rules" : `${c.errors} rule${c.errors === 1 ? "" : "s"} broken`}${this.stale ? " · changed since last check" : ""}</div>
+      <div class="s3-small" data-testid="draw-status-envelope">${esc(c.envelope)}</div>
+      <div class="s3-small" data-testid="draw-status-plot">Plot ${fmt(c.plot_area)} sq m · frontage ${fmt(c.frontage)} m · tallest ${fmt(c.max_height)} m</div>
+      ${c.sloping ? `<div class="s3-small" data-testid="draw-status-slope">Sloping site, about 1:${c.slope ? Math.round(1 / c.slope) : "—"} · reference level <b>${fmt(c.reference_level)} m</b></div>` : ""}
+      ${meter(c.far, "far")}${meter(c.coverage, "coverage")}
+      ${c.assumed?.length ? `<p class="s3-assumed" data-testid="draw-status-assumed"><b>Assumed:</b> ${c.assumed.map(esc).join(" · ")}</p>` : ""}`;
   }
 
   renderIssues() {
     const c = this.check;
     const box = this.$(".dp-issues");
     if (!c || c.error) return (box.innerHTML = "");
-    const row = (i) => `
-      <li class="dp-issue ${i.level}" ${i.item ? `data-goto="${esc(i.item)}"` : ""}>
+    // Issues are numbered within their list: draw-error-1, draw-note-2 …
+    const row = (i, n) => {
+      const t = `draw-${i.level === "error" ? "error" : "note"}-${n + 1}`;
+      return `
+      <li class="dp-issue ${i.level}" data-testid="${t}" ${i.item ? `data-goto="${esc(i.item)}"` : ""}>
         <span class="dp-ico">${i.level === "error" ? "✗" : "i"}</span>
-        <div><p>${esc(i.text)}</p>${i.source ? `<details><summary>${esc(i.source.label)} · ${esc(i.source.cite)}</summary><pre class="quote">${esc(i.source.quote)}</pre></details>${window.docButton ? window.docButton(i.source) : ""}` : ""}</div>
+        <div><p data-testid="${t}-text">${esc(i.text)}</p>${i.source ? `<details data-testid="${t}-rule"><summary data-testid="${t}-rule-toggle">${esc(i.source.label)} · ${esc(i.source.cite)}</summary><pre class="quote" data-testid="${t}-rule-quote">${esc(i.source.quote)}</pre>${window.docButton ? window.docButton(i.source, `${t}-show-in-document`) : ""}</details>` : ""}</div>
       </li>`;
+    };
     const errs = c.issues.filter((i) => i.level === "error"), infos = c.issues.filter((i) => i.level !== "error");
     const reqs = (c.edges ?? []).filter((e) => e.source);
     const seen = new Set();
+    const rid = window.testIds();
     const req = reqs
       .filter((e) => !seen.has(e.label) && seen.add(e.label))
-      .map((e) => `<details class="dp-req"><summary><i style="background:${EDGE_COLOR[e.class]}"></i>${esc(e.label)}</summary><pre class="quote">${esc(e.source.quote)}</pre>${window.docButton ? window.docButton(e.source) : ""}</details>`)
+      .map((e) => {
+        const t = rid("draw-required", e.class);
+        return `<details class="dp-req" data-testid="${t}"><summary data-testid="${t}-toggle"><i style="background:${EDGE_COLOR[e.class]}"></i>${esc(e.label)}</summary><pre class="quote" data-testid="${t}-quote">${esc(e.source.quote)}</pre>${window.docButton ? window.docButton(e.source, `${t}-show-in-document`) : ""}</details>`;
+      })
       .join("");
     box.innerHTML = `
-      ${errs.length ? `<h4>Breaks a rule</h4><ul>${errs.map(row).join("")}</ul>` : '<p class="dp-allgood">No rule broken by this layout.</p>'}
-      ${infos.length ? `<h4>Notes</h4><ul>${infos.map(row).join("")}</ul>` : ""}
-      ${req ? `<h4>Open spaces required</h4>${req}` : ""}`;
+      ${errs.length ? `<h4 data-testid="draw-errors-title">Breaks a rule</h4><ul data-testid="draw-errors">${errs.map(row).join("")}</ul>` : '<p class="dp-allgood" data-testid="draw-all-good">No rule broken by this layout.</p>'}
+      ${infos.length ? `<h4 data-testid="draw-notes-title">Notes</h4><ul data-testid="draw-notes">${infos.map(row).join("")}</ul>` : ""}
+      ${req ? `<h4 data-testid="draw-required-title">Open spaces required</h4>${req}` : ""}`;
     box.querySelectorAll("[data-goto]").forEach((li) =>
       li.addEventListener("click", (e) => {
         if (e.target.closest("details")) return;
@@ -864,22 +899,22 @@ class DrawApp {
     const box = this.$(".dp-props");
     const L = this.layout;
     const num = (key, label, v, step = 0.1, min = 0) =>
-      `<label class="s3-row"><span class="s3-lbl">${label}</span><input type="number" data-k="${key}" value="${fmt(v)}" step="${step}" min="${min}"></label>`;
+      `<label class="s3-row" data-testid="draw-prop-${slug(key)}-field"><span class="s3-lbl">${label}</span><input type="number" data-testid="draw-prop-${slug(key)}" data-k="${key}" value="${fmt(v)}" step="${step}" min="${min}"></label>`;
     const stepper = (key, label, v, step, min, unit = "") =>
-      `<div class="s3-row"><span class="s3-lbl">${label}</span><div class="dp-step">
-         <button type="button" data-dec="${key}" data-st="${step}" data-min="${min}" title="Decrease">−</button>
-         <input type="number" data-k="${key}" value="${fmt(v)}" step="${step}" min="${min}">
-         <button type="button" data-inc="${key}" data-st="${step}" title="Increase">+</button>${unit ? `<span class="dp-unit">${unit}</span>` : ""}
+      `<div class="s3-row" data-testid="draw-prop-${slug(key)}-field"><span class="s3-lbl">${label}</span><div class="dp-step">
+         <button type="button" data-testid="draw-prop-${slug(key)}-decrease" data-dec="${key}" data-st="${step}" data-min="${min}" title="Decrease">−</button>
+         <input type="number" data-testid="draw-prop-${slug(key)}" data-k="${key}" value="${fmt(v)}" step="${step}" min="${min}">
+         <button type="button" data-testid="draw-prop-${slug(key)}-increase" data-inc="${key}" data-st="${step}" title="Increase">+</button>${unit ? `<span class="dp-unit">${unit}</span>` : ""}
        </div></div>`;
     let html = "";
     const it = this.sel?.item && this.item(this.sel.item);
     if (it) {
       const K = KINDS[it.kind];
-      html = `<h4>${esc(K.name)}</h4>
-        <label class="s3-row"><span class="s3-lbl">Name</span><input type="text" data-k="name" value="${esc(it.name)}"></label>`;
+      html = `<h4 data-testid="draw-props-title">${esc(K.name)}</h4>
+        <label class="s3-row" data-testid="draw-prop-name-field"><span class="s3-lbl">Name</span><input type="text" data-testid="draw-prop-name" data-k="name" value="${esc(it.name)}"></label>`;
       if (K.line) {
         html += num("a0", "Start x", it.a[0]) + num("a1", "Start y", it.a[1]) + num("b0", "End x", it.b[0]) + num("b1", "End y", it.b[1]);
-        html += `<label class="s3-row"><span class="s3-lbl">Voltage</span><select data-k="voltage">
+        html += `<label class="s3-row" data-testid="draw-prop-voltage-field"><span class="s3-lbl">Voltage</span><select data-testid="draw-prop-voltage" data-k="voltage">
           ${[["lv", "Low / medium (LT)"], ["hv", "High, up to 33 kV"], ["ehv", "Extra high, above 33 kV"]].map(([v, t]) => `<option value="${v}" ${it.voltage === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>`;
       } else {
         html += num("x", "Centre x", it.x) + num("y", "Centre y", it.y) + num("w", "Width", it.w, 0.1, 0.1) + num("d", "Depth", it.d, 0.1, 0.1);
@@ -889,57 +924,57 @@ class DrawApp {
           html += stepper("roof_pitch", "Roof slope", it.roof_pitch ?? 0, 5, 0, "°");
           if (!it.roof_pitch) html += stepper("parapet", "Parapet", it.parapet ?? 0, 0.05, 0, "m");
           html += stepper("plinth", "Plinth", it.plinth ?? PLINTH, 0.05, 0, "m");
-          html += `<label class="s3-row"><span class="s3-lbl">Basement</span><input type="checkbox" data-k="basement" ${it.basement ? "checked" : ""}></label>`;
+          html += `<label class="s3-row" data-testid="draw-prop-basement-field"><span class="s3-lbl">Basement</span><input type="checkbox" data-testid="draw-prop-basement" data-k="basement" ${it.basement ? "checked" : ""}></label>`;
           const lv = this.check?.levels?.find((x) => x.id === it.id);
           html += lv
-            ? `<p class="dp-small">Ground ${fmt(lv.ground)} m → floor ${fmt(lv.floor)} m → roof ${fmt(lv.roof)} m. Height for the rules: <b>${fmt(lv.rule_height)} m</b> above the reference level (${FLOOR_H} m per floor).</p>`
-            : `<p class="dp-small">${FLOOR_H} m per floor.</p>`;
-          html += `<label class="s3-row"><span class="s3-lbl">Stilt parking</span><input type="checkbox" data-k="stilt" ${it.stilt ? "checked" : ""}></label>`;
+            ? `<p class="dp-small" data-testid="draw-props-levels">Ground ${fmt(lv.ground)} m → floor ${fmt(lv.floor)} m → roof ${fmt(lv.roof)} m. Height for the rules: <b>${fmt(lv.rule_height)} m</b> above the reference level (${FLOOR_H} m per floor).</p>`
+            : `<p class="dp-small" data-testid="draw-props-levels">${FLOOR_H} m per floor.</p>`;
+          html += `<label class="s3-row" data-testid="draw-prop-stilt-field"><span class="s3-lbl">Stilt parking</span><input type="checkbox" data-testid="draw-prop-stilt" data-k="stilt" ${it.stilt ? "checked" : ""}></label>`;
         }
         if (it.kind === "staircase") html += num("width", "Flight width", it.width ?? 0.85, 0.05, 0.3);
-        if (it.kind === "balcony") html += stepper("on_floor", "On floor", it.on_floor ?? 1, 1, 0) + '<p class="dp-small">0 = ground floor.</p>';
+        if (it.kind === "balcony") html += stepper("on_floor", "On floor", it.on_floor ?? 1, 1, 0) + '<p class="dp-small" data-testid="draw-props-help">0 = ground floor.</p>';
         if (["garage", "gate", "tree"].includes(it.kind)) html += stepper("h", "Height", it.h ?? DEFAULT_H[it.kind], it.kind === "tree" ? 0.5 : 0.1, 0.1, "m");
         if (it.kind === "septic_tank") html += stepper("depth", "Depth", it.depth ?? 1, 0.1, 0.1, "m");
         if (it.kind === "custom") {
           const ack = this.check?.custom?.find((a) => a.id === it.id);
           html += stepper("h", "Height", it.h ?? 3, 0.1, 0.1, "m") + stepper("roof_pitch", "Roof slope", it.roof_pitch ?? 0, 5, 0, "°");
-          html += `<label class="s3-row"><span class="s3-lbl">Check in rules</span><input type="checkbox" data-k="check_rules" ${it.check_rules !== false ? "checked" : ""}></label>`;
+          html += `<label class="s3-row" data-testid="draw-prop-check-rules-field"><span class="s3-lbl">Check in rules</span><input type="checkbox" data-testid="draw-prop-check-rules" data-k="check_rules" ${it.check_rules !== false ? "checked" : ""}></label>`;
           html += ack?.as_name
-            ? `<p class="dp-ack ${ack.checked ? "on" : ""}">${ack.checked ? "Read as" : "Looks like"} <b>${esc(ack.as_name)}</b> · ${esc(ack.rules)}${ack.checked ? "" : " — checking is off"}</p>`
-            : `<p class="dp-ack none">No rule names “${esc(it.name)}” yet. Try a name like car shed, watchman cabin, water tank, porch, sunshade, ramp, servant quarter, pump room.</p>`;
+            ? `<p class="dp-ack ${ack.checked ? "on" : ""}" data-testid="draw-props-custom-match">${ack.checked ? "Read as" : "Looks like"} <b>${esc(ack.as_name)}</b> · ${esc(ack.rules)}${ack.checked ? "" : " — checking is off"}</p>`
+            : `<p class="dp-ack none" data-testid="draw-props-custom-match">No rule names “${esc(it.name)}” yet. Try a name like car shed, watchman cabin, water tank, porch, sunshade, ramp, servant quarter, pump room.</p>`;
         }
         if (it.kind === "water_body")
-          html += `<label class="s3-row"><span class="s3-lbl">Type</span><select data-k="water">
+          html += `<label class="s3-row" data-testid="draw-prop-water-field"><span class="s3-lbl">Type</span><select data-testid="draw-prop-water" data-k="water">
             <option value="lake" ${it.water !== "river" ? "selected" : ""}>Lake / pond / nala</option><option value="river" ${it.water === "river" ? "selected" : ""}>River</option></select></label>`;
       }
-      html += `<button type="button" class="dp-del">Delete ${esc(K.name.toLowerCase())}</button>`;
+      html += `<button type="button" class="dp-del" data-testid="draw-delete-item">Delete ${esc(K.name.toLowerCase())}</button>`;
     } else if (this.sel?.road != null) {
-      html = `<h4>Road on edge ${this.sel.road + 1}</h4>
+      html = `<h4 data-testid="draw-props-title">Road on edge ${this.sel.road + 1}</h4>
         ${num("street_width", "Road width", L.street_width, 0.5, 1)}
         ${num("road_level", "Road level", L.road_level, 0.1)}
-        <p class="dp-small">Width and level are shared by all road edges. Removing the road turns this edge back into a plot boundary.</p>
-        <button type="button" class="dp-del">Remove road</button>`;
+        <p class="dp-small" data-testid="draw-props-help">Width and level are shared by all road edges. Removing the road turns this edge back into a plot boundary.</p>
+        <button type="button" class="dp-del" data-testid="draw-remove-road">Remove road</button>`;
     } else if (this.sel?.vertex != null) {
       const p = L.plot[this.sel.vertex];
-      html = `<h4>Plot corner ${this.sel.vertex + 1}</h4>${num("vx", "x", p[0])}${num("vy", "y", p[1])}
+      html = `<h4 data-testid="draw-props-title">Plot corner ${this.sel.vertex + 1}</h4>${num("vx", "x", p[0])}${num("vy", "y", p[1])}
         ${num("vlevel", "Ground level", L.plot_levels?.[this.sel.vertex] ?? L.road_level, 0.1)}
-        <p class="dp-small">Metres above sea level. Give corners different levels for a sloping site.</p>
-        ${L.plot.length > 3 ? '<button type="button" class="dp-del">Delete corner</button>' : ""}`;
+        <p class="dp-small" data-testid="draw-props-help">Metres above sea level. Give corners different levels for a sloping site.</p>
+        ${L.plot.length > 3 ? '<button type="button" class="dp-del" data-testid="draw-delete-corner">Delete corner</button>' : ""}`;
     } else {
       const uses = [["residential", "Residential"], ["business", "Shop / office"], ["educational", "School / college"], ["institutional", "Hospital"], ["assembly", "Hall / cinema"], ["industrial", "Industrial"], ["farm_house", "Farm house"]];
-      html = `<h4>Plot</h4>
+      html = `<h4 data-testid="draw-props-title">Plot</h4>
         ${num("street_width", "Road width", L.street_width, 0.5, 1)}
         ${num("road_level", "Road level", L.road_level, 0.1)}
         ${num("plot_level_all", "Plot level", (L.plot_levels ?? []).reduce((a, b) => a + b, 0) / Math.max(1, (L.plot_levels ?? []).length), 0.1)}
-        <p class="dp-small">Levels in metres above sea level. "Plot level" sets every corner; select a corner to slope the plot.</p>
-        <label class="s3-row"><span class="s3-lbl">Use</span><select data-k="use_type">${uses.map(([v, t]) => `<option value="${v}" ${L.use_type === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-        <label class="s3-row" ${L.use_type === "residential" ? "" : "hidden"}><span class="s3-lbl">Type</span><select data-k="building_type">
+        <p class="dp-small" data-testid="draw-props-help">Metres above sea level. Select a corner to slope the plot.</p>
+        <label class="s3-row" data-testid="draw-prop-use-type-field"><span class="s3-lbl">Use</span><select data-testid="draw-prop-use-type" data-k="use_type">${uses.map(([v, t]) => `<option value="${v}" ${L.use_type === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+        <label class="s3-row" data-testid="draw-prop-building-type-field" ${L.use_type === "residential" ? "" : "hidden"}><span class="s3-lbl">Type</span><select data-testid="draw-prop-building-type" data-k="building_type">
           ${[["detached", "Detached"], ["semi-detached", "Semi-detached"], ["row", "Row"]].map(([v, t]) => `<option value="${v}" ${L.building_type === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-        <label class="s3-row"><span class="s3-lbl">Boundary wall</span><input type="checkbox" data-k="wall" ${L.wall ? "checked" : ""}></label>
+        <label class="s3-row" data-testid="draw-prop-wall-field"><span class="s3-lbl">Boundary wall</span><input type="checkbox" data-testid="draw-prop-wall" data-k="wall" ${L.wall ? "checked" : ""}></label>
         ${L.wall ? num("wall_front", "Front wall h", L.wall.front_h, 0.1, 0) + num("wall_other", "Side/rear h", L.wall.other_h, 0.1, 0) : ""}
-        <label class="s3-row"><span class="s3-lbl">Snap</span><select data-k="snap">
+        <label class="s3-row" data-testid="draw-prop-snap-field"><span class="s3-lbl">Snap</span><select data-testid="draw-prop-snap" data-k="snap">
           ${[[0, "Off"], [0.1, "0.1 m"], [0.5, "0.5 m"], [1, "1 m"]].map(([v, t]) => `<option value="${v}" ${this.snap === v ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-        <p class="dp-small">Select a block to edit it, or a plot corner to move it exactly.</p>`;
+`;
     }
     box.innerHTML = html;
     box.querySelector(".dp-del")?.addEventListener("click", () => this.remove());
@@ -1288,14 +1323,14 @@ function contours(P, [a, b, c], fs) {
   const lo = Math.min(...zs), hi = Math.max(...zs);
   const steps = [0.1, 0.2, 0.3, 0.5, 1, 2, 5];
   const step = steps.find((v) => (hi - lo) / v <= 14) ?? 10;
-  let s = `<clipPath id="dp-clip"><polygon points="${P.map((p) => p.join(",")).join(" ")}"/></clipPath><g clip-path="url(#dp-clip)" class="dp-contours">`;
-  for (let z = Math.ceil(lo / step) * step; z <= hi; z += step) {
+  let s = `<clipPath id="dp-clip"><polygon points="${P.map((p) => p.join(",")).join(" ")}"/></clipPath><g clip-path="url(#dp-clip)" class="dp-contours" data-testid="plan-contours">`;
+  for (let z = Math.ceil(lo / step) * step, n = 1; z <= hi; z += step, n++) {
     let p1, p2;
     if (Math.abs(b) > Math.abs(a)) p1 = [x0, (z - c - a * x0) / b], p2 = [x1, (z - c - a * x1) / b];
     else p1 = [(z - c - b * y0) / a, y0], p2 = [(z - c - b * y1) / a, y1];
-    s += `<line x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}"/>`;
+    s += `<line x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}" data-testid="plan-contour-${n}"/>`;
     const m = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
-    s += `<text x="${m[0]}" y="${m[1]}" font-size="${fs * 0.8}" class="dp-contour-t">${fmt(z)}</text>`;
+    s += `<text x="${m[0]}" y="${m[1]}" font-size="${fs * 0.8}" class="dp-contour-t" data-testid="plan-contour-${n}-label">${fmt(z)}</text>`;
   }
   return s + "</g>";
 }

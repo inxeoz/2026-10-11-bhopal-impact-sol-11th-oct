@@ -26,7 +26,8 @@ Cerebras inference. Every answer shows its source page; when the source is silen
 ## How to run (5 steps)
 
 1. Install Rust (stable) — `cargo --version` should work.
-2. `cp .env.example .env` and set `CEREBRASAPI=<your key>` (optional — see below).
+2. `cp .env.example .env` and set `CEREBRASAPI=<your key>` (optional — see below). Add
+   `SARVAMAPI=<your key>` to turn on the mic button on Building rules (Sarvam speech-to-text, EN/HI).
 3. `cargo run`
 4. Open <http://127.0.0.1:8080> (tabs: Building rules, Draw plot, Document). Use another port with
    `cargo run -- --port 8081`.
@@ -163,6 +164,7 @@ Original pack overview and links: [`PACK-README.md`](PACK-README.md).
 
 ```
 src/llm.rs       Cerebras client (env CEREBRASAPI)
+src/stt.rs       Sarvam speech-to-text for the mic button (env SARVAMAPI); Hindi number words -> digits
 src/track1.rs    rules: retrieval + deterministic table parsers
 src/catalog.rs   3D component catalog (ids, rules, EN/HI trigger words)
 src/facts.rs     every 3D number, read from the rule text by pattern

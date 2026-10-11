@@ -1,8 +1,9 @@
-use bhopal_sahayak::{llm, models, track1, track2};
+use bhopal_sahayak::{llm, models, stt, track1, track2};
 
 use axum::{
+    body::Bytes,
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
@@ -20,6 +21,7 @@ struct App {
     track1: track1::Track1,
     ghats: GhatsResponse,
     llm: llm::Llm,
+    stt: stt::Stt,
     /// GET /api/doc, built once.
     doc: serde_json::Value,
 }
@@ -36,16 +38,24 @@ async fn main() {
         }
     );
 
+    let stt = stt::Stt::from_env();
+    println!(
+        "Sarvam: {}",
+        if stt.is_available() { "key loaded — voice input on" } else { "no SARVAMAPI key — voice input off" }
+    );
+
     let track1 = track1::Track1::load(RULES).expect("load rules jsonl");
     let track2 = track2::Track2::load(GHATS).expect("load ghats csv");
     let ghats = track2.rank(&llm).await;
     println!("Loaded {} rules, {} readings across {} ghats.", track1.corpus.rules.len(), 1524, ghats.ghats.len());
 
     let doc = load_doc(&track1);
-    let app = Arc::new(App { track1, ghats, llm, doc });
+    let app = Arc::new(App { track1, ghats, llm, stt, doc });
 
     let router = Router::new()
         .route("/api/ask", post(ask))
+        .route("/api/transcribe", post(transcribe))
+        .route("/api/voice", get(voice_handler))
         .route("/api/ghats", get(ghats_handler))
         .route("/api/scene", get(scene_handler))
         .route("/api/catalog", get(catalog_handler))
@@ -165,6 +175,31 @@ async fn scene_handler(
     Json(app.track1.scene(&input))
 }
 
+/// Whether the mic button should show: only when the server holds a Sarvam key.
+async fn voice_handler(State(app): State<Arc<App>>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "available": app.stt.is_available() }))
+}
+
+/// The mic button posts its raw recording here (Content-Type = the recording's type).
+async fn transcribe(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    audio: Bytes,
+) -> Result<Json<stt::Transcript>, (StatusCode, String)> {
+    if !app.stt.is_available() {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "voice input is off: no SARVAMAPI key on the server".into()));
+    }
+    if audio.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "no audio received".into()));
+    }
+    let mime = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("audio/webm");
+    app.stt
+        .transcribe(audio.to_vec(), mime)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e))
+}
+
 async fn ask(
     State(app): State<Arc<App>>,
     Json(req): Json<AskRequest>,
@@ -175,7 +210,7 @@ async fn ask(
         return Err((StatusCode::BAD_REQUEST, "empty question".into()));
     }
     let ans = match req.track.as_str() {
-        "bhumi-vikas" | "track1" | "1" => app.track1.solve(q, lang, &app.llm).await,
+        "bhumi-vikas" | "track1" | "1" => app.track1.solve_with(q, lang, &app.llm, &req.details).await,
         "visarjan" | "track2" | "2" => track2_answer(&app, q, lang),
         other => return Err((StatusCode::BAD_REQUEST, format!("unknown track: {other}"))),
     };

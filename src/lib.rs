@@ -5,5 +5,6 @@ pub mod layout;
 pub mod llm;
 pub mod models;
 pub mod scene;
+pub mod stt;
 pub mod track1;
 pub mod track2;

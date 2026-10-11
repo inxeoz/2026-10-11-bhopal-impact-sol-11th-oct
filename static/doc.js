@@ -6,6 +6,22 @@
   const esc = (s) =>
     String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+  /* Test ids: every component carries a readable, unique data-testid ("area-component-key").
+   * slug("Rule 56(1)(a)") -> "rule-56-1-a". testIds() makes a per-render id maker that adds
+   * -2, -3 … when a key repeats, so lists stay unique. Shared with the other scripts. */
+  const slug = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const testIds = () => {
+    const seen = new Map();
+    return (...parts) => {
+      const base = parts.map(slug).filter(Boolean).join("-");
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      return n > 1 ? `${base}-${n}` : base;
+    };
+  };
+  window.slug = slug;
+  window.testIds = testIds;
+
   let data = null;
   let root = null;
   let built = false;
@@ -14,10 +30,10 @@
   let backTo = null;
 
   /** "Open Document" button for a Source {label, cite, quote}; "" if it has no page. */
-  window.docButton = (src, text = "Open Document") => {
+  window.docButton = (src, testid = "show-in-document", text = "Show in document") => {
     const m = /(\d+)/.exec(src?.cite ?? "");
     if (!m) return "";
-    return `<button type="button" class="open-doc" data-page="${m[1]}" data-quote="${esc(src.quote)}" data-label="${esc(src.label)}"
+    return `<button type="button" class="open-doc" data-testid="${esc(testid)}" data-page="${m[1]}" data-quote="${esc(src.quote)}" data-label="${esc(src.label)}"
       title="Show ${esc(src.label)} on PDF page ${m[1]}">${text}</button>`;
   };
 
@@ -37,11 +53,11 @@
   async function mount() {
     root = document.getElementById("doc-root");
     if (built) return;
-    root.innerHTML = '<p class="spinner">Loading the rulebook…</p>';
+    root.innerHTML = '<p class="spinner" data-testid="doc-loading">Loading the rulebook…</p>';
     try {
       await load();
     } catch (err) {
-      root.innerHTML = `<p class="s3-warn">Could not load the rulebook: ${esc(err.message)}</p>`;
+      root.innerHTML = `<p class="s3-warn" data-testid="doc-error">Could not load the rulebook: ${esc(err.message)}</p>`;
       return;
     }
     build();
@@ -50,39 +66,40 @@
 
   function build() {
     const n = data.pages.length;
+    const rid = testIds();
     root.innerHTML = `
-      <div class="dv">
-        <aside class="dv-side">
+      <div class="dv" data-testid="doc-viewer">
+        <aside class="dv-side" data-testid="doc-rules-sidebar">
           <div class="dv-side-head">
-            <b>Rules</b>
-            <input type="search" class="dv-filter" placeholder="Filter: number or words">
+            <b data-testid="doc-rules-title">Rules</b>
+            <input type="search" class="dv-filter" data-testid="doc-rules-filter" placeholder="Filter: number or words">
           </div>
-          <ol class="dv-rules">${data.rules
-            .map((r) => `<li data-page="${r.page}" title="Rule ${esc(r.rule)} starts on page ${r.page}">
+          <ol class="dv-rules" data-testid="doc-rules-list">${data.rules
+            .map((r) => `<li data-testid="${rid("doc-rule", r.rule)}" data-page="${r.page}" title="Rule ${esc(r.rule)} starts on page ${r.page}">
                 <span class="dv-rn">${esc(r.rule)}</span><span class="dv-rt">${esc(r.title)}</span><span class="dv-rp">p.${r.page}</span></li>`)
             .join("")}</ol>
         </aside>
-        <div class="dv-main">
-          <div class="dv-bar">
-            <button type="button" class="ghost dv-back" hidden>← Back</button>
-            <div class="dv-nav">
-              <button type="button" data-nav="-1" title="Previous page">↑</button>
-              <label>Page <input type="number" class="dv-pnum" min="1" max="${n}" value="1"> of ${n}</label>
-              <button type="button" data-nav="1" title="Next page">↓</button>
+        <div class="dv-main" data-testid="doc-main">
+          <div class="dv-bar" data-testid="doc-toolbar">
+            <button type="button" class="ghost dv-back" data-testid="doc-back" hidden>← Back</button>
+            <div class="dv-nav" data-testid="doc-page-nav">
+              <button type="button" data-testid="doc-prev-page" data-nav="-1" title="Previous page">↑</button>
+              <label data-testid="doc-page-field">Page <input type="number" class="dv-pnum" data-testid="doc-page-input" min="1" max="${n}" value="1"> of <span data-testid="doc-page-total">${n}</span></label>
+              <button type="button" data-testid="doc-next-page" data-nav="1" title="Next page">↓</button>
             </div>
-            <div class="dv-find">
-              <input type="search" class="dv-q" placeholder="Find in document">
-              <span class="dv-count"></span>
-              <button type="button" data-find="-1" title="Previous match">‹</button>
-              <button type="button" data-find="1" title="Next match">›</button>
+            <div class="dv-find" data-testid="doc-find">
+              <input type="search" class="dv-q" data-testid="doc-find-input" placeholder="Find in document">
+              <span class="dv-count" data-testid="doc-find-count"></span>
+              <button type="button" data-testid="doc-find-prev" data-find="-1" title="Previous match">‹</button>
+              <button type="button" data-testid="doc-find-next" data-find="1" title="Next match">›</button>
             </div>
-            <a class="dv-pdf" target="_blank" rel="noopener" href="${data.pdf}#page=1">Original PDF ↗</a>
+            <a class="dv-pdf" data-testid="doc-open-pdf" target="_blank" rel="noopener" href="${data.pdf}#page=1">Original PDF ↗</a>
           </div>
-          <div class="dv-note" hidden></div>
-          <div class="dv-scroll">${data.pages
-            .map((p) => `<section class="dv-page" id="dv-p${p.page}" data-page="${p.page}">
-                <div class="dv-ph"><span>PDF page ${p.page}</span><a href="${data.pdf}#page=${p.page}" target="_blank" rel="noopener">open in PDF ↗</a></div>
-                <pre>${esc(p.text)}</pre></section>`)
+          <div class="dv-note" data-testid="doc-note" hidden></div>
+          <div class="dv-scroll" data-testid="doc-pages">${data.pages
+            .map((p) => `<section class="dv-page" data-testid="doc-page-${p.page}" id="dv-p${p.page}" data-page="${p.page}">
+                <div class="dv-ph"><span data-testid="doc-page-${p.page}-label">Page ${p.page}</span><a data-testid="doc-page-${p.page}-pdf" href="${data.pdf}#page=${p.page}" target="_blank" rel="noopener">PDF ↗</a></div>
+                <pre data-testid="doc-page-${p.page}-text">${esc(p.text)}</pre></section>`)
             .join("")}</div>
         </div>
       </div>`;
@@ -161,10 +178,10 @@
     const pre = q(`#dv-p${n} pre`);
     if (!page || !pre) return null;
     const t = page.text;
-    let html = "", at = 0;
+    let html = "", at = 0, k = 0;
     for (const r of ranges) {
       if (r.start < at) continue;
-      html += `${esc(t.slice(at, r.start))}<mark class="dv-hl">${esc(t.slice(r.start, r.end))}</mark>`;
+      html += `${esc(t.slice(at, r.start))}<mark class="dv-hl" data-testid="doc-page-${n}-highlight-${++k}">${esc(t.slice(r.start, r.end))}</mark>`;
       at = r.end;
     }
     pre.innerHTML = html + esc(t.slice(at));

@@ -40,12 +40,7 @@
         </div>
       </form>
 
-      <div id="examples" class="chips">
-        <button class="chip">My house faces a 10 m wide street and will be 9 m tall. How much open space at the front?</button>
-        <button class="chip">What is the minimum rear open space for a 150 sq m residential plot?</button>
-        <button class="chip">How long is a development permission valid, and how many times can I renew it?</button>
-        <button class="chip">How do I pay my property tax online?</button>
-      </div>
+      <div id="examples" class="examples"></div>
 
       <div id="answer" class="answer-wrap"></div>
     </section>
@@ -61,6 +56,10 @@
     </section>
   </main>
 
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three.module.min.js", "three/addons/": "/vendor/" } }
+  </script>
+  <script type="module" src="/scene3d.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

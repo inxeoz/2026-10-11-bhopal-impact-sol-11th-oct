@@ -27,7 +27,9 @@ Cerebras inference. Every answer shows its source page; when the source is silen
 3. `cargo run`
 4. Open <http://127.0.0.1:8080> and pick a track. Use another port with
    `cargo run -- --port 8081`.
-5. `cargo test` runs the sample questions; `cargo test report_all_samples -- --ignored --nocapture` prints every result.
+5. `cargo test` runs the sample questions and the 25 example scenarios;
+   `cargo test report_all_samples -- --ignored --nocapture` prints every sample result and
+   `cargo test --test examples dump -- --ignored --nocapture` prints every example scene.
 
 No key? The tool still runs entirely on its deterministic core (retrieval + table parsing + CPCB
 comparison). The key only powers the language steps: understanding the question and writing the
@@ -60,8 +62,27 @@ translated — it is always shown verbatim in the citation block.
   never as clean; EN/HI brief generated.
 
 - **Visuals (hand-drawn SVG, no chart library):** Track 2 shows a risk-score bar chart, a per-ghat
-  pass/fail/missing bar, and a dissolved-oxygen trend line against the ≥5 mg/l limit; Track 1 draws a
-  front/rear setback schematic from the answer's own numbers.
+  pass/fail/missing bar, and a dissolved-oxygen trend line against the ≥5 mg/l limit.
+- **Track 1, 3D plot (Three.js, vendored in `static/vendor/`):** every plot-shaped question builds
+  a 3D scene composed from a **catalog of components read out of all 106 rules**
+  ([`docs/3d-catalog.md`](docs/3d-catalog.md)). Open spaces come from the rule that governs the
+  case: Rule 56 for homes up to 12.5 m, Rule 42 Tables 4 and 5 above that, Rule 57 for other uses,
+  Rule 17 for farm houses. FAR is checked against Rule 61, 42 or 17. On top of that, 18 components
+  can be drawn: balcony, chhajja, parapet, staircase (real treads and risers), lift, ventilation
+  shaft, courtyard, stilt parking, basement, boundary wall and gate, garage, trees, septic tank,
+  rainwater harvesting, overhead line clearance and lake/river buffer. A free-form question
+  ("G+2 house on 180 sq m, 12 m road, balcony, garage, 11 kV line in front") switches on what it
+  names, and a palette lets the user add or remove any of them. Every number is read from the rule
+  text by pattern (`src/facts.rs`, checked by tests). Where a rule sets no size, the inspector says
+  "drawn, not ruled". Components that break a rule are drawn in red with the reason. The model, if
+  present, only picks catalog ids; it never supplies a dimension.
+- **Track 1, example gallery:** 25 complex scenarios in [`static/examples.json`](static/examples.json),
+  grouped as Homes, Tall buildings, Other uses, Surroundings and Hindi. Examples include a row
+  house that wants stilt parking on a plot too small for it, a 24 m building on a road too narrow
+  for its height, a 45 m tower capped at 30% ground coverage, a factory where Rule 42 outweighs
+  Rule 57(e), a balcony near an 11 kV line, and a house too close to a lake. The UI shows them as
+  clickable cards. `tests/examples.rs` runs each one and checks its open spaces, rule table,
+  components and rule breaches against values checked by hand against the rule tables.
 
 Evidence it is right: **Bairagarh (Sant Hirdaram) kund** ranks first with dissolved oxygen as low as
 **0 mg/l** (limit ≥5) in Durga 2023 (p.60), Ganesh 2023 (p.26) and Ganesh 2025 (p.28) — four anoxic
@@ -77,6 +98,9 @@ readings, matching the problem statement.
 - Risk tiers use fixed score cut-offs (`>25` High, `>12` Medium). The weighting is documented in
   `src/track2.rs` and is a judgement call, not a rule.
 - Hindi rendering quality depends on the model; the citation text stays English on purpose.
+- The 3D plot is a rectangle (1 : 1.5 deep unless frontage is given) and floors are 3 m storeys.
+  Corner plots, room interiors, podiums and layout-scale rules (roads, cul-de-sacs, community open
+  space) are catalogued but not drawn — see `docs/3d-catalog.md`.
 
 ## Data and sources
 
@@ -94,12 +118,16 @@ Original pack overview and links: [`PACK-README.md`](PACK-README.md).
 ```
 src/llm.rs       Cerebras client (env CEREBRASAPI)
 src/track1.rs    rules: retrieval + deterministic table parsers
+src/catalog.rs   3D component catalog (ids, rules, EN/HI trigger words)
+src/facts.rs     every 3D number, read from the rule text by pattern
+src/scene.rs     composes a question into a 3D scene (open spaces, FAR, components)
 src/track2.rs    ghats: CPCB classification + ranking
 src/corpus.rs    BM25 over the rule texts
 src/models.rs    Answer / Source / Evidence types
 src/main.rs      axum routes + JSON API
-static/          hand-written HTML/CSS/JS UI
-tests/           sample-question assertions
+static/          hand-written HTML/CSS/JS UI (scene3d.js = 3D view, components3d.js = drawers)
+docs/            3d-catalog.md — every spatial value in the rules and what is drawn
+tests/           sample-question assertions + every example in static/examples.json
 ```
 
 ## License

@@ -1,10 +1,14 @@
 use crate::corpus::{tokenize, Corpus, Rule};
+use crate::facts::Facts;
+use crate::scene::{SceneInput, SPATIAL_WORDS};
 use crate::llm::Llm;
 use crate::models::{Answer, Lang, Source};
 use regex::Regex;
 
 pub struct Track1 {
     pub corpus: Corpus,
+    /// Every number the 3D scene uses, read from the rule text at load.
+    pub facts: Facts,
 }
 
 const VERSION_NOTE: &str = "Source: M.P. Bhumi Vikas Rules, 2012, consolidated to 6 March 2025. \
@@ -14,6 +18,21 @@ const PARSE_SYSTEM: &str = "You normalise a question about the M.P. Bhumi Vikas 
 Return ONLY JSON: {\"english_query\": \"<the question rewritten as English search keywords>\", \
 \"out_of_scope\": <true if it is not about these building rules>}. Keep any numbers. \
 Rewrite Hindi questions in English. Do not answer the question.";
+
+/// Lets the model pick 3D components for a question, from the catalog only.
+fn compose_system() -> String {
+    let ids: Vec<String> = crate::catalog::CATALOG
+        .iter()
+        .map(|e| format!("{} ({})", e.id, e.name))
+        .collect();
+    format!(
+        "Pick which of these 3D components a question about a building plot mentions or clearly implies. \
+         Components: {}. Use types: residential, business, educational, institutional, assembly, industrial, farm_house. \
+         Return ONLY JSON: {{\"components\": [<ids from the list>], \"use_type\": \"<one use type>\"}}. \
+         Never output numbers.",
+        ids.join(", ")
+    )
+}
 
 const TRANSLATE_SYSTEM: &str = "Translate the JSON fields 'answer' and 'detail' into Hindi \
 (Devanagari). Keep EVERY number, unit, rule number and page number exactly as written. \
@@ -33,23 +52,56 @@ const OUT_OF_SCOPE: &[&str] = &[
     "registration fee",
 ];
 
-struct Band {
-    lo: f64,
-    hi: Option<f64>,
-    val: String,
-    quote: String,
+pub(crate) struct Band {
+    pub lo: f64,
+    pub hi: Option<f64>,
+    pub val: String,
+    pub quote: String,
 }
 
 impl Track1 {
     pub fn load(path: &str) -> std::io::Result<Self> {
-        Ok(Track1 { corpus: Corpus::load(path)? })
+        let corpus = Corpus::load(path)?;
+        let facts = Facts::load(&corpus);
+        Ok(Track1 { corpus, facts })
     }
 
-    fn rule(&self, no: &str) -> Option<&Rule> {
+    pub(crate) fn rule(&self, no: &str) -> Option<&Rule> {
         self.corpus.rules.iter().find(|r| r.rule == no)
     }
 
     pub async fn solve(&self, question: &str, lang: Lang, llm: &Llm) -> Answer {
+        let mut a = self.answer(question, lang, llm).await;
+        // A plot-shaped question also gets a 3D scene, built from the same rules.
+        if !a.abstained {
+            let nums = Numbers::parse(question);
+            let q = question.to_lowercase();
+            let mut input = SceneInput::from_question(question, &nums);
+            let named = input.components.as_deref().is_some_and(|c| !c.is_empty()) || input.use_type.is_some();
+            if nums.is_spatial() || named || mentions(&q, SPATIAL_WORDS) {
+                // The model may add catalog ids the keyword match missed (e.g. "a place to park
+                // my car under the house" -> stilt_parking). It picks from a closed list only.
+                if llm.is_available() {
+                    if let Some(v) = llm.json(lang, &compose_system(), question).await {
+                        let ids: Vec<String> = v["components"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                            .unwrap_or_default();
+                        input.add_components(&ids);
+                        if input.use_type.is_none() {
+                            input.use_type = v["use_type"].as_str().filter(|u| *u != "residential").map(str::to_string);
+                        }
+                    }
+                }
+                if let Ok(v) = serde_json::to_value(self.scene(&input)) {
+                    a.facts["scene"] = v;
+                }
+            }
+        }
+        a
+    }
+
+    async fn answer(&self, question: &str, lang: Lang, llm: &Llm) -> Answer {
         let q = question.to_lowercase();
 
         if OUT_OF_SCOPE.iter().any(|k| q.contains(k)) {
@@ -83,9 +135,63 @@ impl Track1 {
         }
 
         let nums = Numbers::parse(question);
+        // "frontage" is not "front".
+        let qf = q.replace("frontage", "");
+
+        // Plot-shaped questions are answered from the same scene the 3D view draws, so the
+        // text never contradicts the picture. Rule 56 front/rear lookups below stay as the
+        // audited fast path for plain residential questions.
+        let input = SceneInput::from_question(question, &nums);
+        let asked: Vec<String> = input
+            .components
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .filter(|id| crate::catalog::entry(id).is_some_and(|e| e.not_drawn.is_none()))
+            .map(str::to_string)
+            .collect();
+        let tall = input
+            .height
+            .or(input.floors.map(|f| f * 3.0))
+            .zip(self.facts.v("r56.max_h"))
+            .is_some_and(|(h, max)| h > max);
+        // Whole words: "residential" must not count as "side".
+        let words = |text: &str, keys: &[&str]| keys.iter().any(|k| crate::catalog::contains_word(text, k));
+        let open_space_q = words(&qf, &["front", "rear", "side", "sides", "open space", "setback", "mos", "around", "आगे", "सामने", "पीछे", "खुली जगह"]);
+        let general_q = words(&qf, &["side", "sides", "open spaces", "around", "setbacks", "दोनों ओर"]);
+        let component_q = !asked.is_empty()
+            && words(&q, &["allowed", "can i", "can we", "is it", "is the", "how far", "where", "fit", "need", "required", "enough", "क्या", "कहाँ", "कितनी दूर"]);
+        let spatial = nums.is_spatial() || input.use_type.is_some();
+        // Only with real numbers: a verdict built on assumed defaults would mislead, so a
+        // general rule question ("how far from a line?") gets the rule itself below.
+        if spatial {
+            let scene = self.scene(&input);
+            let failing = scene.components.iter().any(|c| !c.ok && asked.iter().any(|a| a == c.id));
+            if failing
+                || component_q
+                || ((tall || input.use_type.is_some()) && open_space_q)
+                || (general_q && spatial)
+            {
+                let focus = if component_q || failing { asked.clone() } else { vec![] };
+                if let Some(mut a) = self.scene_answer(question, lang, &scene, &focus, open_space_q) {
+                    if lang == Lang::Hi && llm.is_available() {
+                        let payload = serde_json::json!({ "answer": a.answer, "detail": a.detail });
+                        if let Some(v) = llm.json(Lang::Hi, TRANSLATE_SYSTEM, &payload.to_string()).await {
+                            if let Some(t) = v["answer"].as_str() {
+                                a.answer = t.trim().to_string();
+                            }
+                            if let Some(t) = v["detail"].as_str() {
+                                a.detail = t.trim().to_string();
+                            }
+                        }
+                    }
+                    return a;
+                }
+            }
+        }
 
         // Deterministic table answers first — these are the audited numbers.
-        if mentions(&q, &["front", "आगे", "सामने"]) && nums.street_width.is_some() {
+        if mentions(&qf, &["front", "आगे", "सामने"]) && nums.street_width.is_some() {
             if let Some(a) = self.front_open_space(question, lang, nums.street_width.unwrap()) {
                 return a;
             }
@@ -130,7 +236,8 @@ impl Track1 {
         a
     }
 
-    fn front_open_space(&self, question: &str, lang: Lang, width: f64) -> Option<Answer> {
+    /// Rule 56(1)(a) table row for a street width.
+    pub(crate) fn front_band(&self, width: f64) -> Option<Band> {
         let r = self.rule("56")?;
         let re_up = Regex::new(r"(?i)Up to\s+([0-9.]+)\s*meters?\s+([0-9.]+)\s*meters?").ok()?;
         let re_bt =
@@ -141,6 +248,10 @@ impl Track1 {
 
         let mut bands = Vec::new();
         for c in re_up.captures_iter(&section) {
+            // Skip the tail of "More than X and up to Y" rows; re_bt reads those whole.
+            if section[..c.get(0).unwrap().start()].trim_end().to_lowercase().ends_with("and") {
+                continue;
+            }
             bands.push(Band {
                 lo: 0.0,
                 hi: c[1].parse().ok(),
@@ -165,7 +276,132 @@ impl Track1 {
             });
         }
         bands.sort_by(|a, b| a.lo.partial_cmp(&b.lo).unwrap());
-        let band = pick(&bands, width)?;
+        take(bands, width)
+    }
+
+    /// An answer read off the composed scene: open spaces, plus a verdict for each
+    /// component the question asked about (`focus`). A failing component leads.
+    fn scene_answer(
+        &self,
+        question: &str,
+        lang: Lang,
+        s: &crate::scene::Scene,
+        focus: &[String],
+        open_space_q: bool,
+    ) -> Option<Answer> {
+        let hi = lang == Lang::Hi;
+        let _ = open_space_q;
+        let (front, rear) = (s.front.as_ref()?, s.rear.as_ref()?);
+        let (l, r) = (s.side_left.as_ref().map(|x| x.m), s.side_right.as_ref().map(|x| x.m));
+        let sides = match (l, r, hi) {
+            (Some(a), Some(b), false) if a == b => format!("{a} m on each side"),
+            (Some(a), Some(b), false) => format!("{a} m and {b} m on the two sides"),
+            (Some(a), None, false) => format!("{a} m on one side"),
+            (_, _, false) => "no side open space".into(),
+            (Some(a), Some(b), true) if a == b => format!("दोनों ओर {a} मीटर"),
+            (Some(a), Some(b), true) => format!("एक ओर {a} मीटर और दूसरी ओर {b} मीटर"),
+            (Some(a), None, true) => format!("एक ओर {a} मीटर"),
+            (_, _, true) => "बगल में खुली जगह आवश्यक नहीं".into(),
+        };
+        let open = if hi {
+            format!("सामने {} मीटर, पीछे {} मीटर, {sides} खुली जगह छोड़ें।", front.m, rear.m)
+        } else {
+            format!("Leave {} m at the front, {} m at the rear and {sides}.", front.m, rear.m)
+        };
+
+        // Components that are checked against something else lead (line vs balcony, water vs building).
+        const FIRST: &[&str] = &["electric_line", "water_body", "septic_tank", "garage", "stilt_parking", "courtyard", "staircase", "lift"];
+        let rank = |id: &str| FIRST.iter().position(|x| *x == id).unwrap_or(FIRST.len());
+        let mut picked: Vec<&crate::scene::Component> =
+            s.components.iter().filter(|c| focus.iter().any(|f| f == c.id)).collect();
+        picked.sort_by_key(|c| (c.ok, rank(c.id)));
+        let line = |c: &crate::scene::Component| {
+            let verdict = match (c.ok, hi) {
+                (true, false) => "",
+                (false, false) => "not allowed as asked — ",
+                (true, true) => "",
+                (false, true) => "जैसा पूछा वैसा अनुमत नहीं — ",
+            };
+            format!("{}: {verdict}{}", c.name, c.notes.first().cloned().unwrap_or_default())
+        };
+        let failing = picked.iter().find(|c| !c.ok);
+        let ql = question.to_lowercase();
+        let explicit_open = mentions(&ql, &["open space", "setback", "how much", "खुली जगह", "कितनी जगह"]);
+        // "Can I build …?" gets yes/no first when the scene breaks a rule.
+        let permission_q = ["can i", "can we", "allowed", "permitted", "possible", "क्या"]
+            .iter()
+            .any(|k| crate::catalog::contains_word(&ql, k));
+        let answer = match (failing, picked.first(), open_space_q && explicit_open) {
+            (Some(c), _, _) => line(c),
+            _ if permission_q && !s.permitted && !s.notes.is_empty() => {
+                if hi {
+                    format!("जैसा बताया वैसा नहीं: {}", s.notes[0])
+                } else {
+                    format!("Not as described: {}", s.notes[0])
+                }
+            }
+            (None, Some(c), false) => line(c),
+            _ => open.clone(),
+        };
+
+        let mut detail = vec![format!("{}.", s.envelope)];
+        if answer != open {
+            detail.push(open);
+        }
+        for c in &picked {
+            let l = line(c);
+            if l != answer {
+                detail.push(l);
+            }
+        }
+        detail.extend(s.notes.iter().chain(&s.info).filter(|n| !picked.iter().any(|c| n.contains(c.notes.first().map(String::as_str).unwrap_or("\u{0}")))).cloned());
+        if !s.assumed.is_empty() {
+            let a: Vec<&str> = s.assumed.iter().map(|a| a.text.as_str()).collect();
+            detail.push(format!("Assumed: {}.", a.join(", ")));
+        }
+
+        let mut sources: Vec<Source> = vec![];
+        let mut add = |x: Source| {
+            if !sources.iter().any(|y| y.quote == x.quote) {
+                sources.push(x);
+            }
+        };
+        for c in &picked {
+            for src in &c.sources {
+                add(src.clone());
+            }
+        }
+        for sb in [Some(front), Some(rear), s.side_left.as_ref()].into_iter().flatten() {
+            add(Source { label: sb.label.clone(), cite: sb.cite.clone(), quote: sb.quote.clone() });
+        }
+        // Open-space questions lead with the open-space sources.
+        if picked.is_empty() {
+            sources.sort_by_key(|x| !x.label.starts_with("Front"));
+        }
+
+        Some(Answer {
+            track: "bhumi-vikas".into(),
+            question: question.into(),
+            lang: lang.code().into(),
+            answer,
+            detail: detail.join(" "),
+            abstained: false,
+            sources,
+            note: VERSION_NOTE.into(),
+            facts: serde_json::json!({
+                "front_open_space_m": front.m,
+                "rear_open_space_m": rear.m,
+                "side_open_space_m": [l, r],
+                "envelope": s.envelope,
+                "permitted": s.permitted,
+                "verdicts": picked.iter().map(|c| serde_json::json!({ "id": c.id, "ok": c.ok })).collect::<Vec<_>>(),
+            }),
+        })
+    }
+
+    fn front_open_space(&self, question: &str, lang: Lang, width: f64) -> Option<Answer> {
+        let r = self.rule("56")?;
+        let band = self.front_band(width)?;
         let val = &band.val;
 
         let (answer, detail) = match lang {
@@ -205,7 +441,8 @@ impl Track1 {
         })
     }
 
-    fn rear_open_space(&self, question: &str, lang: Lang, area: f64) -> Option<Answer> {
+    /// Rule 56(2)(a) table row for a plot area.
+    pub(crate) fn rear_band(&self, area: f64) -> Option<Band> {
         let r = self.rule("56")?;
         let re_up = Regex::new(r"(?i)Up to\s+([0-9.]+)\s+(Nil)").ok()?;
         let re_bt = Regex::new(r"(?i)Above\s+([0-9.]+)\s+and up to\s+([0-9.]+)\s+([0-9.]+)").ok()?;
@@ -227,10 +464,23 @@ impl Track1 {
             bands.push(Band { lo: c[1].parse().ok()?, hi: None, val: c[2].to_string(), quote: c[0].to_string() });
         }
         bands.sort_by(|a, b| a.lo.partial_cmp(&b.lo).unwrap());
-        let band = pick(&bands, area)?;
+        take(bands, area)
+    }
+
+    fn rear_open_space(&self, question: &str, lang: Lang, area: f64) -> Option<Answer> {
+        let r = self.rule("56")?;
+        let band = self.rear_band(area)?;
         let val = &band.val;
 
         let (answer, detail) = match lang {
+            Lang::En if val.eq_ignore_ascii_case("nil") => (
+                "No rear open space is required (Nil).".to_string(),
+                format!("For a residential plot of {area} sq m, Rule 56(2)(a) sets the rear open space as Nil."),
+            ),
+            Lang::Hi if val.eq_ignore_ascii_case("nil") => (
+                "पीछे खुली जगह आवश्यक नहीं (शून्य)।".to_string(),
+                format!("{area} वर्ग मीटर के आवासीय भूखंड पर नियम 56(2)(क) के अनुसार पीछे की खुली जगह शून्य है।"),
+            ),
             Lang::En => (
                 format!("Leave {val} m of open space at the rear."),
                 format!(
@@ -424,13 +674,13 @@ impl Track1 {
     }
 }
 
-fn mentions(q: &str, keys: &[&str]) -> bool {
+pub(crate) fn mentions(q: &str, keys: &[&str]) -> bool {
     keys.iter().any(|k| q.contains(k))
 }
 
 /// Slice a rule's text between `start` and `end` markers so table regexes only
 /// see the right table.
-fn section(text: &str, start: &str, end: &str) -> String {
+pub(crate) fn section(text: &str, start: &str, end: &str) -> String {
     let s = text.to_lowercase();
     let i = s.find(&start.to_lowercase()).map(|i| i).unwrap_or(0);
     let rest = &text[i..];
@@ -441,9 +691,9 @@ fn section(text: &str, start: &str, end: &str) -> String {
     rest[..j].to_string()
 }
 
-fn pick(bands: &[Band], v: f64) -> Option<&Band> {
+fn take(bands: Vec<Band>, v: f64) -> Option<Band> {
     bands
-        .iter()
+        .into_iter()
         .find(|b| (v > b.lo || b.lo == 0.0) && b.hi.map(|h| v <= h).unwrap_or(true))
 }
 
@@ -477,9 +727,20 @@ pub struct Numbers {
     pub plot_area: Option<f64>,
     pub height: Option<f64>,
     pub built_up_area: Option<f64>,
+    pub frontage: Option<f64>,
+    pub floors: Option<f64>,
 }
 
 impl Numbers {
+    /// True when the question gives anything that shapes the plot or building.
+    pub fn is_spatial(&self) -> bool {
+        self.street_width.is_some()
+            || self.plot_area.is_some()
+            || self.height.is_some()
+            || self.frontage.is_some()
+            || self.floors.is_some()
+    }
+
     pub fn parse(q: &str) -> Numbers {
         let mut out = Numbers::default();
         let re = Regex::new(
@@ -498,35 +759,67 @@ impl Numbers {
                 }
                 continue;
             }
-            // Length: classify by nearby words.
-            let start = c.get(0).unwrap().start();
-            let win_start = start.saturating_sub(24);
-            let win = q[win_start..(start + c[0].len() + 20).min(q.len())].to_lowercase();
-            if win.contains("tall") || win.contains("high") || win.contains("height")
-                || win.contains("floor") || win.contains("ऊँच") || win.contains("मंजिल")
-                || win.contains("मंज़िल")
-            {
-                if out.height.is_none() {
-                    out.height = Some(val);
-                }
-            } else if win.contains("road") || win.contains("street") || win.contains("सड़क")
-                || win.contains("चौड़")
-            {
-                if out.street_width.is_none() {
-                    out.street_width = Some(val);
-                }
+            // Length: classify by the NEAREST context word, so "40 m frontage, on an
+            // 18 m road" gives frontage 40 and road 18.
+            let m = c.get(0).unwrap();
+            let before = q[floor_char(q, m.start().saturating_sub(30))..m.start()].to_lowercase();
+            let after = q[m.end()..floor_char(q, (m.end() + 24).min(q.len()))].to_lowercase();
+            let dist = |keys: &[&str]| {
+                keys.iter()
+                    .filter_map(|k| {
+                        let b = before.rfind(k).map(|i| before.len() - i - k.len());
+                        let a = after.find(k);
+                        b.into_iter().chain(a).min()
+                    })
+                    .min()
+            };
+            let classes = [
+                (dist(&["frontage", "plot width", "wide plot", "फ्रंटेज"]), 0),
+                (dist(&["tall", "high", "height", "floor", "tower", "multistor", "building", "house", "apartment", "bungalow", "factory", "hall", "ऊँच", "ऊंच", "मंजिल", "मंज़िल", "बहुमंजिल", "मकान", "इमारत", "भवन"]), 1),
+                (dist(&["road", "street", "lane", "सड़क", "चौड़"]), 2),
+            ];
+            let slot = match classes.iter().filter_map(|(d, i)| d.map(|d| (d, *i))).min() {
+                Some((_, 0)) => &mut out.frontage,
+                Some((_, 1)) => &mut out.height,
+                Some((_, 2)) => &mut out.street_width,
+                _ => continue,
+            };
+            if slot.is_none() {
+                *slot = Some(val);
             }
+        }
+        // Plot in hectares ("0.5 hectare", "1 ha", "2 हेक्टेयर") — farm houses are sized this way.
+        if out.plot_area.is_none() {
+            let re_ha = Regex::new(r"(?i)([0-9]+(?:\.[0-9]+)?)\s*(?:hectares?|hectre|ha\b|हेक्टेयर)").unwrap();
+            if let Some(c) = re_ha.captures(q) {
+                out.plot_area = c[1].parse::<f64>().ok().map(|h| h * 10_000.0);
+            }
+        }
+        // Floor count: "3 floors", "G+2", "3 मंजिल".
+        let re_f = Regex::new(r"(?i)([0-9]+)\s*-?\s*(?:floors?|stor(?:e)?ys?|stories|मंजिल|मंज़िल|मंजिला)").unwrap();
+        let re_g = Regex::new(r"(?i)\bG\s*\+\s*([0-9]+)").unwrap();
+        if let Some(c) = re_f.captures(q) {
+            out.floors = c[1].parse().ok();
+        } else if let Some(c) = re_g.captures(q) {
+            out.floors = c[1].parse::<f64>().ok().map(|n| n + 1.0);
         }
         // Built-up area: a number near "built" / "construct".
         let re_b = Regex::new(r"(?i)([0-9]+(?:\.[0-9]+)?)\s*(square\s*met(?:er|re)s?|sq\.?\s*m|sqm|वर्ग\s*मीटर)").unwrap();
         for c in re_b.captures_iter(q) {
             let start = c.get(0).unwrap().start();
-            let win_start = start.saturating_sub(30);
-            let win = q[win_start..].to_lowercase();
+            let win = q[floor_char(q, start.saturating_sub(30))..].to_lowercase();
             if win.contains("built") || win.contains("construct") || win.contains("निर्मित") {
                 out.built_up_area = c[1].parse().ok();
             }
         }
         out
     }
+}
+
+/// Largest char boundary at or below `i` — byte offsets into Hindi text must not split a character.
+fn floor_char(s: &str, mut i: usize) -> usize {
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
 }

@@ -1,0 +1,455 @@
+[
+  {
+    "group": "Homes",
+    "title": "G+2 house with balcony and stair",
+    "q": "My plot is 180 sq m with 11 m frontage on a 12 m road. I want a G+2 detached house with a balcony, chhajjas, parapet and a staircase. What open space do I leave at the front?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "3.6 m",
+      "envelope_has": "Rule 56",
+      "front": 3.6,
+      "rear": 2.5,
+      "sides": [
+        3,
+        3
+      ],
+      "permitted": true,
+      "components": [
+        "balcony",
+        "chhajja",
+        "parapet",
+        "staircase"
+      ],
+      "note_has": "Rule 53(1)"
+    }
+  },
+  {
+    "group": "Homes",
+    "title": "Semi-detached with a garage",
+    "q": "Semi-detached house, 9 m tall, on a 150 sq m plot with 10 m frontage facing a 9 m road. How much side open space do I need, and can I fit a garage?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "2.5 m on one side",
+      "front": 3,
+      "rear": 1.5,
+      "sides": [
+        2.5,
+        null
+      ],
+      "permitted": true,
+      "components": [
+        "garage"
+      ]
+    }
+  },
+  {
+    "group": "Homes",
+    "title": "Row house wants stilt parking",
+    "q": "Row house on a 100 sq m plot, 6 m frontage, 7.5 m road, 3 floors with stilt parking and a ventilation shaft for the toilets. What open spaces apply?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "200 sq m",
+      "front": 3,
+      "rear": 1.5,
+      "sides": [
+        null,
+        null
+      ],
+      "permitted": false,
+      "components": [
+        "ventilation_shaft"
+      ],
+      "failing": [
+        "stilt_parking"
+      ]
+    }
+  },
+  {
+    "group": "Homes",
+    "title": "Low bungalow, courtyard, trees",
+    "q": "Detached bungalow 6.5 m tall on a 300 sq m plot with 11.5 m frontage on a 15 m road, with an inner courtyard, trees and rainwater harvesting. What are the side open spaces?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "3 m and 1.5 m",
+      "front": 4.5,
+      "rear": 3,
+      "sides": [
+        3,
+        1.5
+      ],
+      "permitted": true,
+      "components": [
+        "courtyard",
+        "trees",
+        "rainwater_harvesting"
+      ]
+    }
+  },
+  {
+    "group": "Homes",
+    "title": "Tiny plot on a narrow lane",
+    "q": "I have a 40 sq m plot on a 4.5 m wide lane and want a 2 floor house. How much rear open space is needed?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "Nil",
+      "rear": 0,
+      "permitted": true,
+      "note_has": "Rule 56(1)(b)"
+    }
+  },
+  {
+    "group": "Homes",
+    "title": "Basement under a house",
+    "q": "Detached house 10 m tall on 350 sq m, 14 m frontage, 18 m road, with a basement, staircase, boundary wall and garage. What open space at the front?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "4.5 m",
+      "front": 4.5,
+      "rear": 3,
+      "sides": [
+        3,
+        3
+      ],
+      "permitted": true,
+      "components": [
+        "staircase",
+        "basement",
+        "boundary_wall",
+        "garage"
+      ],
+      "note_has": "Rule 76(2)(b)"
+    }
+  },
+  {
+    "group": "Tall buildings",
+    "title": "15 m apartments, Table 4",
+    "q": "15 m apartment building on a 1200 sq m plot, 25 m frontage, 12 m road, with lift, staircase, basement parking and a boundary wall with gate. What open spaces are required?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "7.5 m at the front",
+      "envelope_has": "Table 4 row 1",
+      "front": 7.5,
+      "rear": 6,
+      "sides": [
+        6,
+        6
+      ],
+      "permitted": true,
+      "components": [
+        "staircase",
+        "lift",
+        "stilt_parking",
+        "basement",
+        "boundary_wall"
+      ]
+    }
+  },
+  {
+    "group": "Tall buildings",
+    "title": "24 m on a road that is too narrow",
+    "q": "Can I build 24 m tall on a 1000 sq m plot with 20 m frontage facing a 12 m road? What open space at the front?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "Not as described",
+      "envelope_has": "Table 4 row 2",
+      "front": 9,
+      "permitted": false,
+      "note_has": "Table 4 row 1: up to 18 m"
+    }
+  },
+  {
+    "group": "Tall buildings",
+    "title": "10-storey, Table 4 row 3",
+    "q": "10-storey residential building on 2500 sq m, 40 m frontage, on a 30 m road, with lift, staircase and parapet. What open spaces?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "12 m at the front",
+      "envelope_has": "Table 4 row 3",
+      "front": 12,
+      "rear": 7.5,
+      "sides": [
+        7.5,
+        7.5
+      ],
+      "permitted": true,
+      "components": [
+        "parapet",
+        "staircase",
+        "lift"
+      ]
+    }
+  },
+  {
+    "group": "Tall buildings",
+    "title": "45 m tower, Table 5",
+    "q": "45 m residential tower on 4000 sq m plot, 60 m frontage, 36 m road, with courtyard, ventilation shaft, lift, staircase and parapet. What open space at the front?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "15 m at the front",
+      "envelope_has": "Table 5 row 1",
+      "front": 15,
+      "rear": 7.5,
+      "permitted": true,
+      "components": [
+        "courtyard",
+        "ventilation_shaft",
+        "lift"
+      ],
+      "note_has": "30% ground-coverage"
+    }
+  },
+  {
+    "group": "Tall buildings",
+    "title": "80 m high-rise, Table 5 row 4",
+    "q": "80 m high-rise on a 5000 sq m plot with 70 m frontage on a 60 m road, with stilt parking, basement and lift. What setback at the front?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "24 m at the front",
+      "envelope_has": "Table 5 row 4",
+      "front": 24,
+      "rear": 10,
+      "sides": [
+        10,
+        10
+      ],
+      "permitted": true,
+      "components": [
+        "lift",
+        "stilt_parking",
+        "basement"
+      ]
+    }
+  },
+  {
+    "group": "Other uses",
+    "title": "School, Rule 57(a)",
+    "q": "School building 12 m tall on a 3000 sq m plot, 45 m frontage, 18 m road, with staircase and boundary wall. What open space around the building?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "6 m at the front",
+      "envelope_has": "Educational",
+      "front": 6,
+      "rear": 6,
+      "sides": [
+        6,
+        6
+      ],
+      "permitted": true,
+      "components": [
+        "staircase",
+        "boundary_wall"
+      ]
+    }
+  },
+  {
+    "group": "Other uses",
+    "title": "Hospital with lift",
+    "q": "Hospital 9 m tall on a 2000 sq m plot on an 18 m road with lift and staircase. What open space at the front?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "6 m at the front",
+      "envelope_has": "Institutional",
+      "front": 6,
+      "permitted": true,
+      "components": [
+        "staircase",
+        "lift"
+      ]
+    }
+  },
+  {
+    "group": "Other uses",
+    "title": "Auditorium, 12 m front",
+    "q": "Community hall auditorium 10 m tall on a 2500 sq m plot on an 18 m road, with stilt parking. What open space at the front?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "12 m at the front",
+      "envelope_has": "Assembly",
+      "front": 12,
+      "rear": 6,
+      "permitted": true,
+      "components": [
+        "stilt_parking"
+      ]
+    }
+  },
+  {
+    "group": "Other uses",
+    "title": "Shops and offices with basement",
+    "q": "Shop and office building 12 m tall on a 500 sq m plot, 18 m frontage, 12 m road, with basement and staircase. What open space at the front and sides?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "6 m at the front",
+      "envelope_has": "Business",
+      "front": 6,
+      "rear": 4.5,
+      "sides": [
+        4.5,
+        4.5
+      ],
+      "permitted": true,
+      "components": [
+        "staircase",
+        "basement"
+      ]
+    }
+  },
+  {
+    "group": "Other uses",
+    "title": "Factory 20 m, Rule 42 vs 57(e)",
+    "q": "Factory 20 m tall on a 5000 sq m plot on a 24 m road. What open space all around?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "9 m at the front",
+      "envelope_has": "Table 4 row 2",
+      "front": 9,
+      "rear": 6,
+      "permitted": true
+    }
+  },
+  {
+    "group": "Other uses",
+    "title": "Farm house on half a hectare",
+    "q": "Farm house on 0.5 hectare with trees, septic tank and boundary wall, on a 9 m road. What open space from the sides?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "7.5 m at the front",
+      "envelope_has": "Farm house",
+      "front": 7.5,
+      "rear": 7.5,
+      "sides": [
+        7.5,
+        7.5
+      ],
+      "permitted": true,
+      "components": [
+        "boundary_wall",
+        "trees",
+        "septic_tank"
+      ]
+    }
+  },
+  {
+    "group": "Surroundings",
+    "title": "Balcony near an 11 kV line",
+    "q": "An 11 kV line runs along my front boundary. 9 m house on 150 sq m on a 9 m road with a balcony and chhajja. Is the balcony allowed near the electric line?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "1.8 m from the balcony edge",
+      "front": 3,
+      "permitted": true,
+      "components": [
+        "balcony",
+        "chhajja",
+        "boundary_wall",
+        "electric_line"
+      ]
+    }
+  },
+  {
+    "group": "Surroundings",
+    "title": "132 kV transmission line",
+    "q": "A 132 kV transmission line runs in front of my 200 sq m plot on a 12 m road. I want a 2 floor house. How far must the building be from the line?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "7.5 m",
+      "front": 3.6,
+      "permitted": false,
+      "failing": [
+        "electric_line"
+      ]
+    }
+  },
+  {
+    "group": "Surroundings",
+    "title": "House by the lake",
+    "q": "House 12 m tall on a 250 sq m plot backing onto a lake, 15 m road in front. How far from the lake must I build?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "9 m",
+      "rear": 3,
+      "permitted": false,
+      "failing": [
+        "water_body"
+      ]
+    }
+  },
+  {
+    "group": "Surroundings",
+    "title": "Septic tank on a small plot",
+    "q": "Where can the septic tank go for a 120 sq m row house, 6 m tall, on a 9 m road?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "front open space",
+      "rear": 1.5,
+      "permitted": true,
+      "components": [
+        "septic_tank"
+      ]
+    }
+  },
+  {
+    "group": "Surroundings",
+    "title": "River plot with trees",
+    "q": "400 sq m plot next to a river, 2 floors, on a 12 m road, with trees and rainwater harvesting. How far from the river?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "15 m",
+      "permitted": false,
+      "components": [
+        "trees",
+        "rainwater_harvesting"
+      ],
+      "failing": [
+        "water_body"
+      ]
+    }
+  },
+  {
+    "group": "हिंदी",
+    "title": "3 मंजिल मकान, बालकनी",
+    "q": "मेरा प्लॉट 200 वर्ग मीटर का है, सामने 9 मीटर चौड़ी सड़क है, 3 मंजिल मकान बनाना है, बालकनी और सीढ़ी के साथ। आगे कितनी जगह छोड़ें?",
+    "lang": "hi",
+    "expect": {
+      "answer_has": "3.0",
+      "front": 3,
+      "rear": 2.5,
+      "permitted": true,
+      "components": [
+        "balcony",
+        "staircase"
+      ]
+    }
+  },
+  {
+    "group": "हिंदी",
+    "title": "तालाब के पास मकान",
+    "q": "तालाब के पास 300 वर्ग मीटर का प्लॉट, 12 मीटर सड़क, 2 मंजिल मकान, पेड़ और रेन वाटर हार्वेस्टिंग के साथ। पीछे कितनी जगह छोड़ें?",
+    "lang": "hi",
+    "expect": {
+      "answer_has": "9 m",
+      "rear": 3,
+      "permitted": false,
+      "failing": [
+        "water_body"
+      ]
+    }
+  },
+  {
+    "group": "हिंदी",
+    "title": "30 मीटर ऊँची इमारत",
+    "q": "30 मीटर ऊँची बहुमंजिला इमारत, 2000 वर्ग मीटर प्लॉट, 30 मीटर फ्रंटेज, 24 मीटर सड़क, लिफ्ट और बेसमेंट के साथ। सामने कितनी खुली जगह?",
+    "lang": "hi",
+    "expect": {
+      "answer_has": "12",
+      "envelope_has": "Table 4 row 3",
+      "front": 12,
+      "rear": 7.5,
+      "permitted": true,
+      "components": [
+        "lift",
+        "basement"
+      ]
+    }
+  }
+]

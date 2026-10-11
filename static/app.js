@@ -30,12 +30,61 @@ $("#ask-form").addEventListener("submit", (e) => {
   const q = $("#q").value.trim();
   if (q) ask(q);
 });
-$$(".chip").forEach((c) =>
-  c.addEventListener("click", () => {
-    $("#q").value = c.textContent;
-    ask(c.textContent);
-  })
-);
+
+/* ---------- track 1: example gallery (static/examples.json, also run by tests/examples.rs) ---------- */
+const QUICK = [
+  { title: "Front open space", q: "My house faces a 10 m wide street and will be 9 m tall. How much open space at the front?" },
+  { title: "Rear open space", q: "What is the minimum rear open space for a 150 sq m residential plot?" },
+  { title: "Permission validity", q: "How long is a development permission valid, and how many times can I renew it?" },
+  { title: "Out of scope", q: "How do I pay my property tax online?" },
+].map((e) => ({ ...e, group: "Quick", lang: "en" }));
+
+async function loadExamples() {
+  let rich = [];
+  try {
+    rich = await (await fetch("/examples.json")).json();
+  } catch {}
+  const all = [...QUICK, ...rich];
+  const groups = [...new Set(all.map((e) => e.group))];
+  const box = $("#examples");
+  box.innerHTML = `
+    <div class="ex-bar">
+      <div class="ex-tabs" role="tablist">${groups
+        .map((g, i) => `<button type="button" class="ex-tab ${i === 1 ? "is-on" : ""}" data-group="${esc(g)}">${esc(g)}
+          <span class="ex-n">${all.filter((e) => e.group === g).length}</span></button>`)
+        .join("")}</div>
+      <button type="button" class="ex-toggle">Browse ${all.length} examples</button>
+    </div>
+    <div class="ex-grid"></div>`;
+  const show = (g) => {
+    $$(".ex-tab", box).forEach((t) => t.classList.toggle("is-on", t.dataset.group === g));
+    $(".ex-grid", box).innerHTML = all
+      .map((e, i) => [e, i])
+      .filter(([e]) => e.group === g)
+      .map(([e, i]) => `<button type="button" class="ex-card" data-i="${i}" ${e.lang === "hi" ? 'lang="hi"' : ""}>
+          <span class="ex-title">${esc(e.title)}</span><span class="ex-q">${esc(e.q)}</span></button>`)
+      .join("");
+    $$(".ex-card", box).forEach((c) =>
+      c.addEventListener("click", () => {
+        const e = all[c.dataset.i];
+        setLang(e.lang || "en");
+        $("#q").value = e.q;
+        ask(e.q);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      })
+    );
+  };
+  $$(".ex-tab", box).forEach((t) => t.addEventListener("click", () => (box.classList.remove("is-collapsed"), show(t.dataset.group))));
+  $(".ex-toggle", box).addEventListener("click", () => box.classList.toggle("is-collapsed"));
+  show(groups[1] ?? groups[0]);
+}
+
+function setLang(lang) {
+  state.lang = lang;
+  $$(".lang-btn[data-lang]").forEach((x) => x.classList.toggle("is-on", x.dataset.lang === lang));
+}
+
+loadExamples();
 
 async function ask(question) {
   const box = $("#answer");
@@ -48,7 +97,7 @@ async function ask(question) {
     });
     if (!r.ok) throw new Error(await r.text());
     renderAnswer(await r.json());
-    $("#examples").classList.add("is-hidden");
+    $("#examples").classList.add("is-collapsed");
   } catch (err) {
     box.innerHTML = `<div class="card"><div class="card-head"><p class="verdict">Could not reach the tool.</p>
       <p class="detail">${esc(err.message)}</p></div></div>`;
@@ -63,7 +112,11 @@ function renderAnswer(a) {
         <pre class="quote">${esc(s.quote)}</pre></div>`
     )
     .join("");
-  const diagram = setbackSVG(a.facts || {});
+  const scene = a.facts && a.facts.scene;
+  const diagram = scene
+    ? `<div class="scene3d"><div class="s3-head"><span class="tag">Your plot in 3D</span>
+         <span class="s3-sub">Built from your question · every size from the rule text</span></div><div class="s3-body"></div></div>`
+    : setbackSVG(a.facts || {});
   $("#answer").innerHTML = `
     <article class="card ${a.abstained ? "abstained" : "answered"}">
       <div class="card-head">
@@ -75,6 +128,15 @@ function renderAnswer(a) {
       ${a.note ? `<p class="note">${esc(a.note)}</p>` : ""}
       ${cites}
     </article>`;
+  if (scene) mount3D($("#answer .s3-body"), scene);
+}
+
+/* ---------- track 1: 3D plot (static/scene3d.js) ---------- */
+function mount3D(el, scene, tries = 0) {
+  // The module script loads deferred; wait briefly if it has not run yet.
+  if (window.mountScene) return window.mountScene(el, scene);
+  if (tries < 40) return setTimeout(() => mount3D(el, scene, tries + 1), 50);
+  el.innerHTML = setbackSVG(scene.front ? { front_open_space_m: scene.front.m, street_width_m: scene.street_width_m } : {});
 }
 
 /* ---------- track 1: setback schematic ---------- */

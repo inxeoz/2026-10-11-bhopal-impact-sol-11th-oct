@@ -1,7 +1,7 @@
 use bhopal_sahayak::{llm, models, track1, track2};
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -41,6 +41,8 @@ async fn main() {
     let router = Router::new()
         .route("/api/ask", post(ask))
         .route("/api/ghats", get(ghats_handler))
+        .route("/api/scene", get(scene_handler))
+        .route("/api/catalog", get(catalog_handler))
         .route("/api/health", get(|| async { "ok" }))
         .fallback_service(ServeDir::new("static"))
         .with_state(app);
@@ -81,6 +83,22 @@ fn port_from_args() -> u16 {
 
 async fn ghats_handler(State(app): State<Arc<App>>) -> Json<GhatsResponse> {
     Json(app.ghats.clone())
+}
+
+/// The component palette: every catalog entry, drawn or not, plus any fact that failed to read.
+async fn catalog_handler(State(app): State<Arc<App>>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "components": bhopal_sahayak::catalog::CATALOG,
+        "missing_facts": app.track1.facts.missing,
+    }))
+}
+
+/// The 3D view's sliders call this; open spaces are recomputed from Rule 56 each time.
+async fn scene_handler(
+    State(app): State<Arc<App>>,
+    Query(input): Query<bhopal_sahayak::scene::SceneInput>,
+) -> Json<bhopal_sahayak::scene::Scene> {
+    Json(app.track1.scene(&input))
 }
 
 async fn ask(

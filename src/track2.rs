@@ -1,5 +1,5 @@
 use crate::llm::Llm;
-use crate::models::{Evidence, GhatRisk, GhatsResponse, Verdict};
+use crate::models::{Counts, Evidence, GhatRisk, GhatsResponse, Point, Verdict};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
@@ -139,6 +139,28 @@ impl Track2 {
 
         let reason = reason_for(site, &evidence, score);
 
+        // Verdict tally across every reading, for the summary bar.
+        let mut counts = Counts::default();
+        for r in rs {
+            match classify(&r.parameter, r.value, &r.flag, &r.printed) {
+                Verdict::Pass => counts.pass += 1,
+                Verdict::Fail => counts.fail += 1,
+                Verdict::Low => counts.low += 1,
+                Verdict::Missing => counts.missing += 1,
+            }
+        }
+
+        // Dissolved oxygen in time order, for the trend chart. Missing stays None.
+        let mut dop: Vec<&&Reading> = rs.iter().filter(|r| r.parameter == "Dissolved oxygen").collect();
+        dop.sort_by_key(|r| (r.year, fest_rank(&r.festival), phase_rank(&r.phase)));
+        let do_series: Vec<Point> = dop
+            .iter()
+            .map(|r| Point {
+                label: format!("{} {} {}", &r.year.to_string()[2..], short_fest(&r.festival), r.phase),
+                value: r.value,
+            })
+            .collect();
+
         GhatRisk {
             rank: 0,
             ghat: site.into(),
@@ -147,6 +169,8 @@ impl Track2 {
             score: (score * 10.0).round() / 10.0,
             reason,
             evidence,
+            do_series,
+            counts,
         }
     }
 
@@ -287,6 +311,20 @@ fn reason_for(site: &str, evidence: &[Evidence], score: f64) -> String {
         "{} {} against the Class B limit at {} phase, {}.",
         e.parameter, e.value, e.phase, e.cite
     )
+}
+
+fn fest_rank(f: &str) -> u8 {
+    if f.starts_with('D') { 1 } else { 0 }
+}
+fn phase_rank(p: &str) -> u8 {
+    match p {
+        "pre" => 0,
+        "during" => 1,
+        _ => 2,
+    }
+}
+fn short_fest(f: &str) -> &'static str {
+    if f.starts_with('D') { "D" } else { "G" }
 }
 
 fn fmt_n(v: f64) -> String {

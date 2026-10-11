@@ -59,6 +59,10 @@ translated — it is always shown verbatim in the citation block.
   ranked with the worst dissolved-oxygen reading as the headline; `not sampled` is shown as missing,
   never as clean; EN/HI brief generated.
 
+- **Visuals (hand-drawn SVG, no chart library):** Track 2 shows a risk-score bar chart, a per-ghat
+  pass/fail/missing bar, and a dissolved-oxygen trend line against the ≥5 mg/l limit; Track 1 draws a
+  front/rear setback schematic from the answer's own numbers.
+
 Evidence it is right: **Bairagarh (Sant Hirdaram) kund** ranks first with dissolved oxygen as low as
 **0 mg/l** (limit ≥5) in Durga 2023 (p.60), Ganesh 2023 (p.26) and Ganesh 2025 (p.28) — four anoxic
 readings, matching the problem statement.

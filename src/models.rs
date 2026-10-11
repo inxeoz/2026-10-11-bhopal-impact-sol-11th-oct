@@ -53,6 +53,22 @@ pub enum Verdict {
     Low,
 }
 
+/// One point on a chart. `value` is None where the reading is missing.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Point {
+    pub label: String,
+    pub value: Option<f64>,
+}
+
+/// Verdict tally across all readings for a ghat.
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Counts {
+    pub pass: usize,
+    pub fail: usize,
+    pub low: usize,
+    pub missing: usize,
+}
+
 /// A ghat's risk rank with the reason in plain words.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct GhatRisk {
@@ -63,6 +79,9 @@ pub struct GhatRisk {
     pub score: f64,
     pub reason: String,
     pub evidence: Vec<Evidence>,
+    /// Dissolved oxygen across every test point, in time order (for the trend chart).
+    pub do_series: Vec<Point>,
+    pub counts: Counts,
 }
 
 /// The single response shape for both tracks.

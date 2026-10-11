@@ -120,6 +120,27 @@ Plan, 3D and section views show the road level, the ground, the plinth, the floo
 line and the height that counts for the rules. A plot whose corners are within 0.05 m of each
 other is treated as level (stated in `src/layout.rs`).
 
+## Custom components (Draw plot)
+
+A custom block takes the rules of whatever its name matches (whole words, most specific first,
+`ALIASES` in `src/layout.rs`). Turn *Check in rules* off and the block is drawn only.
+
+| Name examples | Read as | Checked against |
+|---|---|---|
+| watchman cabin, guard room, pump room, chowkidar | Watchman hut / pump room | 58(4)(c): up to 6 sq m in an open space; 2(20) covered area |
+| servant quarter, maid room, outhouse | Servant quarter | 2(30): over 25 sq m counts in FAR; not in an open space |
+| water tank, mumty, machine room, chimney | Rooftop structure | 2(9): on a roof; up to ⅓ of the roof area is left out of height |
+| car shed, carport, garage | Garage | 75: at least 2.5 × 5 m and 2.2 m high; 56(4) not in the front open space |
+| porch, portico | Porch | 2(55), 2(20): not counted in coverage or FAR; attached to a building |
+| chhajja, sunshade, cornice | Sunshade | 58(1)(a)-(b): up to 0.75 m; attached |
+| ramp | Ramp | 76(4)(g): must not obstruct an open space |
+| parapet | Parapet | 77: at least 1.05 m |
+| room, annex, shop, office, house | Building | open spaces, FAR, height |
+| stairs, lift, shaft, courtyard, septic, tree, gate, pond, rainwater… | the matching built-in block | that block's rules |
+
+A name no rule matches is reported as "drawn but not checked", with the closest rule text found
+by search.
+
 ## Catalogued, not drawn
 
 Each of these is in `catalog.rs`. When a question mentions one, the 3D panel lists it with

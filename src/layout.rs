@@ -18,6 +18,8 @@ type P = [f64; 2];
 
 /// Floor-to-floor height used to turn a floor count into a height (stated in the UI).
 const FLOOR_HEIGHT: f64 = 3.0;
+/// Slab thickness assumed when checking clear room height from floor-to-floor height (stated in the UI).
+const SLAB: f64 = 0.15;
 /// Plinth when none is given; Rule 68(1) wants more than 0.45 m (stated in the UI).
 const DEFAULT_PLINTH: f64 = 0.5;
 /// Corner levels closer than this count as a flat site.
@@ -91,6 +93,27 @@ pub struct Item {
     pub plinth: Option<f64>,
     #[serde(default)]
     pub basement: Option<bool>,
+    /// Own height of a block (garage, gate, tree, custom, hut …), metres.
+    #[serde(default)]
+    pub h: Option<f64>,
+    /// Building: floor-to-floor height.
+    #[serde(default)]
+    pub floor_height: Option<f64>,
+    /// Building or custom block: roof pitch in degrees (0 = flat).
+    #[serde(default)]
+    pub roof_pitch: Option<f64>,
+    /// Building: parapet height on a flat roof (None = not drawn).
+    #[serde(default)]
+    pub parapet: Option<f64>,
+    /// Balcony: floor it projects from (0 = ground).
+    #[serde(default)]
+    pub on_floor: Option<f64>,
+    /// Septic tank depth below ground.
+    #[serde(default)]
+    pub depth: Option<f64>,
+    /// Custom block: check it against the rule its name matches (default on).
+    #[serde(default)]
+    pub check_rules: Option<bool>,
 }
 
 impl Item {
@@ -109,8 +132,17 @@ impl Item {
     fn floors(&self) -> f64 {
         self.floors.unwrap_or(1.0).max(1.0)
     }
+    fn floor_h(&self) -> f64 {
+        self.floor_height.filter(|v| *v > 0.0).unwrap_or(FLOOR_HEIGHT)
+    }
+    /// Physical height of the storeys (no plinth, ridge or parapet).
     fn height(&self) -> f64 {
-        self.height.unwrap_or(self.floors() * FLOOR_HEIGHT)
+        self.height.unwrap_or(self.floors() * self.floor_h())
+    }
+    /// Ridge rise of a pitched roof over the shorter span.
+    fn ridge(&self) -> f64 {
+        let p = self.roof_pitch.unwrap_or(0.0).clamp(0.0, 75.0);
+        self.w.min(self.d) / 2.0 * p.to_radians().tan()
     }
     fn area(&self) -> f64 {
         self.w * self.d
@@ -173,6 +205,7 @@ pub struct Check {
     /// Steepest slope as a fraction (rise / run).
     pub slope: f64,
     pub levels: Vec<BuildingLevel>,
+    pub custom: Vec<CustomAck>,
 }
 
 /// Where a building sits vertically.
@@ -184,6 +217,8 @@ pub struct BuildingLevel {
     /// Ground-floor level (top of plinth, or of stilt deck).
     pub floor: f64,
     pub roof: f64,
+    /// Highest point counted for height: roof plus ridge, plus a parapet taller than Rule 2(9) excludes.
+    pub top: f64,
     /// Height for the rules: roof minus reference level, stilt excluded (Rule 2(9)).
     pub rule_height: f64,
 }
@@ -204,6 +239,14 @@ pub fn kind_name(kind: &str) -> &'static str {
         "water_body" => "Lake / river",
         "electric_line" => "Power line",
         "gate" => "Gate",
+        "custom" => "Custom",
+        "sunshade" => "Chhajja / sunshade",
+        "hut" => "Watchman hut / pump room",
+        "servant_quarter" => "Servant quarter",
+        "porch" => "Porch",
+        "roof_structure" => "Rooftop structure",
+        "ramp" => "Ramp",
+        "parapet_wall" => "Parapet",
         _ => "Item",
     }
 }
@@ -241,7 +284,106 @@ fn sb_src(s: &Setback) -> Source {
     Source { label: s.label.clone(), cite: s.cite.clone(), quote: s.quote.clone() }
 }
 
+/// Names a user might give a custom block, mapped to what the rules call it. More specific
+/// phrases come first ("guard room" before "room"). Matching is whole-word.
+const ALIASES: &[(&str, &[&str])] = &[
+    ("hut", &["watchman", "guard room", "guard cabin", "security cabin", "chowkidar", "pump room", "pump house", "चौकीदार"]),
+    ("servant_quarter", &["servant quarter", "servant room", "maid room", "outhouse", "out house"]),
+    ("roof_structure", &["water tank", "overhead tank", "mumty", "mumptee", "machine room", "chimney", "टंकी"]),
+    ("garage", &["garage", "car shed", "carport", "car port", "vehicle shed", "गैरेज"]),
+    ("parking_bay", &["parking", "car park", "car space", "पार्किंग"]),
+    ("porch", &["porch", "portico", "पोर्च"]),
+    ("balcony", &["balcony", "gallery", "sit out", "sit-out", "बालकनी"]),
+    ("sunshade", &["chhajja", "chajja", "sunshade", "sun shade", "weather shade", "cornice", "छज्जा"]),
+    ("staircase", &["stair", "stairs", "staircase", "steps", "सीढ़ी", "जीना"]),
+    ("lift", &["lift", "elevator", "लिफ्ट"]),
+    ("shaft", &["shaft", "duct", "ventilation"]),
+    ("courtyard", &["courtyard", "court yard", "aangan", "angan", "chowk", "आंगन", "आँगन"]),
+    ("septic_tank", &["septic", "soak pit", "soakpit", "sewage tank", "सेप्टिक", "सोख्ता"]),
+    ("rwh_pit", &["rainwater", "rain water", "recharge pit", "harvesting", "rwh"]),
+    ("tree", &["tree", "plant", "पेड़", "पौधा"]),
+    ("gate", &["gate", "entrance", "गेट", "फाटक"]),
+    ("water_body", &["pond", "lake", "nala", "nallah", "talab", "river", "तालाब", "नदी"]),
+    ("ramp", &["ramp", "driveway ramp"]),
+    ("parapet_wall", &["parapet", "मुंडेर"]),
+    ("building", &["room", "house", "annex", "annexe", "extension", "block", "wing", "shop", "office", "कमरा", "मकान", "दुकान"]),
+];
+
+/// The rule kind a custom name stands for, if any.
+pub fn resolve_custom(name: &str) -> Option<&'static str> {
+    let q = name.to_lowercase();
+    ALIASES
+        .iter()
+        .find(|(_, ws)| ws.iter().any(|w| crate::catalog::contains_word(&q, w)))
+        .map(|(k, _)| *k)
+}
+
+fn kind_rules(kind: &str) -> &'static str {
+    match kind {
+        "garage" => "Rules 75, 56(4), 2(20)",
+        "parking_bay" => "Rule 84 (norms in Appendix 1)",
+        "balcony" => "Rule 58(1)(c)",
+        "sunshade" => "Rule 58(1)(a)-(b)",
+        "staircase" => "Rule 80",
+        "lift" => "Rule 83",
+        "shaft" => "Rule 56(6)(b)",
+        "courtyard" => "Rule 56(6)(a)",
+        "septic_tank" => "Rule 79",
+        "rwh_pit" => "Rule 81",
+        "tree" => "Rule 67",
+        "gate" => "Rules 41(c), 42(6)",
+        "water_body" => "Rule 50(b)",
+        "hut" => "Rules 58(4)(c), 2(20)",
+        "servant_quarter" => "Rules 2(30), 61 Note (3)",
+        "porch" => "Rules 2(55), 2(20)",
+        "roof_structure" => "Rule 2(9)",
+        "ramp" => "Rule 76(4)(g)",
+        "parapet_wall" => "Rules 77, 2(9)",
+        "building" => "open spaces, FAR and height (Rules 56/57/42, 61)",
+        _ => "",
+    }
+}
+
+/// What a custom block was taken to be.
+#[derive(Serialize, Debug, Clone)]
+pub struct CustomAck {
+    pub id: String,
+    pub name: String,
+    /// Rule kind it was read as (None: no rule names it).
+    pub as_kind: Option<String>,
+    pub as_name: Option<String>,
+    pub rules: Option<String>,
+    pub checked: bool,
+}
+
 fn check(t: &Track1, l: &Layout) -> Check {
+    // Custom blocks with rule checking on take the kind their name matches.
+    let mut acks = vec![];
+    let items: Vec<Item> = l
+        .items
+        .iter()
+        .map(|it| {
+            if it.kind != "custom" {
+                return it.clone();
+            }
+            let name = it.name.clone().unwrap_or_default();
+            let kind = resolve_custom(&name);
+            let on = it.check_rules != Some(false);
+            acks.push(CustomAck {
+                id: it.id.clone(),
+                name: name.clone(),
+                as_kind: kind.map(str::to_string),
+                as_name: kind.map(|k| kind_name(k).to_string()),
+                rules: kind.map(|k| kind_rules(k).to_string()),
+                checked: on && kind.is_some(),
+            });
+            match kind {
+                Some(k) if on => Item { kind: k.to_string(), ..it.clone() },
+                _ => it.clone(),
+            }
+        })
+        .collect();
+    let items = &items;
     let fx = &t.facts;
     let mut o = Out { issues: vec![], bad: vec![] };
     let plot = &l.plot;
@@ -249,8 +391,8 @@ fn check(t: &Track1, l: &Layout) -> Check {
     let area = signed_area(plot).abs();
     let mut assumed = vec![];
 
-    let buildings: Vec<&Item> = l.items.iter().filter(|i| i.kind == "building").collect();
-    let of = |k: &'static str| l.items.iter().filter(move |i| i.kind == k);
+    let buildings: Vec<&Item> = items.iter().filter(|i| i.kind == "building").collect();
+    let of = |k: &'static str| items.iter().filter(move |i| i.kind == k);
 
     // ---- plot sanity ----
     if n >= 4 && self_intersects(plot) {
@@ -293,8 +435,19 @@ fn check(t: &Track1, l: &Layout) -> Check {
             let g = b.rect().iter().map(|&p| ground(p)).fold(f64::MIN, f64::max);
             let floor = g + b.plinth.unwrap_or(DEFAULT_PLINTH);
             let st = if b.stilt == Some(true) { stilt_h } else { 0.0 };
-            let roof = floor + st + b.floors() * FLOOR_HEIGHT;
-            BuildingLevel { id: b.id.clone(), ground: round2(g), floor: round2(floor), roof: round2(roof), rule_height: round2(roof - st - reference) }
+            let roof = floor + st + b.floors() * b.floor_h();
+            // Rule 2(9): parapets up to the stated height are left out of building height.
+            let excl = fx.v("parapet.excl").unwrap_or(1.5);
+            let para = b.parapet.filter(|p| b.ridge() == 0.0 && *p > excl).unwrap_or(0.0);
+            let top = roof + b.ridge() + para;
+            BuildingLevel {
+                id: b.id.clone(),
+                ground: round2(g),
+                floor: round2(floor),
+                roof: round2(roof),
+                top: round2(top),
+                rule_height: round2(top - st - reference),
+            }
         })
         .collect();
     let rh = |b: &Item| blevels.iter().find(|x| x.id == b.id).map(|x| x.rule_height).unwrap_or(b.height());
@@ -496,9 +649,23 @@ fn check(t: &Track1, l: &Layout) -> Check {
     let inside_building = |i: &Item| buildings.iter().find(|b| rect_inside(&i.rect(), &b.rect()));
     let res = matches!(scene.use_type.as_str(), "residential" | "farm_house");
 
-    for it in &l.items {
+    // Is a block inside a required open space (closer to an edge than that edge allows)?
+    let in_mos = |r: &[P]| edges.iter().any(|e| e.required > 0.0 && poly_seg_dist(r, plot[e.index], plot[(e.index + 1) % n]) + 0.005 < e.required);
+    let touches_building = |r: &[P]| buildings.iter().any(|b| poly_poly_dist(r, &b.rect()) < 0.05);
+
+    for it in items {
         match it.kind.as_str() {
             "balcony" => {
+                // Rule 58(1)(c): "at first or higher floors".
+                let fl = it.on_floor.unwrap_or(1.0);
+                if fl < 1.0 {
+                    o.err(Some(it), format!("{} is on the ground floor; Rule 58(1)(c) allows projected balconies at first or higher floors.", it.label()), src(fx.get("proj.balcony")));
+                }
+                if let Some(host) = buildings.iter().find(|b| poly_poly_dist(&it.rect(), &b.rect()) < 0.05) {
+                    if fl > host.floors() - 1.0 {
+                        o.err(Some(it), format!("{} is on floor {fl}, but {} has only {} floors.", it.label(), host.label(), host.floors()), None);
+                    }
+                }
                 let (max, clear) = (fx.v("proj.balcony"), fx.v("proj.balcony_clear"));
                 let s = src(fx.get("proj.balcony"));
                 if let Some(max) = max {
@@ -534,6 +701,12 @@ fn check(t: &Track1, l: &Layout) -> Check {
                 if in_front {
                     o.err(Some(it), format!("{} sits in the front open space; Rule 56(4) allows a garage only at the rear end of a side open space.", it.label()), None);
                 }
+                if let Some(min_h) = fx.v("garage.h") {
+                    let h = it.h.unwrap_or(2.6);
+                    if h + 0.005 < min_h {
+                        o.err(Some(it), format!("{} is {h} m high; Rule 75(1) needs at least {min_h} m.", it.label()), src(fx.get("garage.h")));
+                    }
+                }
                 if let Some(free) = fx.v("garage.free_sqm") {
                     if it.area() > free {
                         o.info(Some(it), format!("{} is over {free} sq m, so it counts as ground coverage (Rule 2(20)).", it.label()), src(fx.get("garage.free_sqm")));
@@ -541,6 +714,12 @@ fn check(t: &Track1, l: &Layout) -> Check {
                 }
             }
             "septic_tank" => {
+                if let Some(min_d) = fx.v("septic.depth") {
+                    let d = it.depth.unwrap_or(1.0);
+                    if d + 0.005 < min_d {
+                        o.err(Some(it), format!("{} is {d} m deep; Rule 79(2)(a) needs at least {min_d} m below the surface.", it.label()), src(fx.get("septic.w_cm")));
+                    }
+                }
                 let s = src(fx.get("septic.gap"));
                 if let Some(gap) = fx.v("septic.gap") {
                     for b in &buildings {
@@ -633,7 +812,7 @@ fn check(t: &Track1, l: &Layout) -> Check {
                     _ => ("line.lv.h", "low / medium voltage"),
                 };
                 if let Some(h) = fx.v(key) {
-                    for b in l.items.iter().filter(|x| matches!(x.kind.as_str(), "building" | "balcony")) {
+                    for b in items.iter().filter(|x| matches!(x.kind.as_str(), "building" | "balcony")) {
                         let dd = poly_seg_dist(&b.rect(), a, bp);
                         if dd + 0.005 < h {
                             o.err(Some(b), format!("{} is {} m from the {label} line; Rule 52 needs {h} m horizontally.", b.label(), round2(dd)), src(fx.get(key)));
@@ -656,7 +835,111 @@ fn check(t: &Track1, l: &Layout) -> Check {
                     }
                 }
             }
+            "sunshade" => {
+                if let Some(max) = fx.v("proj.sunshade") {
+                    let dpt = it.w.min(it.d);
+                    if dpt > max + 0.005 {
+                        o.err(Some(it), format!("{} projects {} m; Rule 58(1)(b) allows up to {max} m.", it.label(), round2(dpt)), src(fx.get("proj.sunshade")));
+                    }
+                }
+                if !touches_building(&it.rect()) {
+                    o.err(Some(it), format!("{} is not attached to a building.", it.label()), None);
+                }
+            }
+            "hut" => {
+                if let Some(max) = fx.v("hut.max") {
+                    if it.area() > max + 0.005 {
+                        if in_mos(&it.rect()) {
+                            o.err(Some(it), format!("{} is {} sq m in an open space; Rule 58(4)(c) allows up to {max} sq m there.", it.label(), round2(it.area())), src(fx.get("hut.max")));
+                        } else {
+                            o.info(Some(it), format!("{} is over {max} sq m, so it counts as covered area (Rule 2(20)).", it.label()), src(fx.get("hut.max")));
+                        }
+                    }
+                }
+            }
+            "servant_quarter" => {
+                if let Some(max) = fx.v("sq.max") {
+                    if it.area() > max + 0.005 {
+                        o.info(Some(it), format!("{} is {} sq m; over {max} sq m it counts in FAR (Rule 2(30)).", it.label(), round2(it.area())), src(fx.get("sq.max")));
+                    }
+                }
+                if in_mos(&it.rect()) {
+                    o.err(Some(it), format!("{} sits in a required open space.", it.label()), None);
+                }
+            }
+            "porch" => {
+                o.info(Some(it), format!("{}: a porch is not counted in ground coverage or FAR (Rule 2(20), 2(30)).", it.label()), src(fx.get("porch.def")));
+                if !touches_building(&it.rect()) {
+                    o.err(Some(it), format!("{} is not attached to a building.", it.label()), None);
+                }
+            }
+            "roof_structure" => match inside_building(it) {
+                None => o.err(Some(it), format!("{} should sit on a building's roof (inside its outline).", it.label()), None),
+                Some(b) => {
+                    let total: f64 = items.iter().filter(|x| x.kind == "roof_structure" && rect_inside(&x.rect(), &b.rect())).map(|x| x.area()).sum();
+                    let third = b.area() / 3.0;
+                    if total > third + 0.005 {
+                        o.info(Some(it), format!("Rooftop structures on {} cover {} sq m, over a third of the roof ({} sq m): they count in its height (Rule 2(9)).", b.label(), round2(total), round2(third)), src(fx.get("height.excl")));
+                    } else {
+                        o.info(Some(it), format!("{} is left out of building height: rooftop structures cover no more than a third of the roof (Rule 2(9)).", it.label()), src(fx.get("height.excl")));
+                    }
+                }
+            },
+            "ramp" => {
+                if in_mos(&it.rect()) {
+                    o.err(Some(it), format!("{} sits in a required open space; Rule 76(4)(g) allows open ramps only where they do not obstruct it.", it.label()), src(fx.get("ramp.mos")));
+                }
+            }
+            "parapet_wall" => {
+                if let Some(min) = fx.v("parapet.h") {
+                    let h = it.h.unwrap_or(1.0);
+                    if h + 0.005 < min {
+                        o.err(Some(it), format!("{} is {h} m; Rule 77 needs at least {min} m.", it.label()), src(fx.get("parapet.h")));
+                    }
+                }
+            }
             _ => {}
+        }
+    }
+
+    // Custom blocks: say what each was taken to be.
+    for a in &acks {
+        let it = l.items.iter().find(|x| x.id == a.id);
+        let label = if a.name.is_empty() { "This custom block".to_string() } else { format!("‘{}’", a.name) };
+        let text = match (&a.as_name, a.checked) {
+            (Some(k), true) => format!("{label} is read as {k} and checked against {}.", a.rules.clone().unwrap_or_default()),
+            (Some(k), false) => format!("{label} looks like {k} ({}), but rule checking is off for it.", a.rules.clone().unwrap_or_default()),
+            (None, _) => {
+                let hit = t.corpus.search(&a.name, 1).into_iter().find(|(_, sc)| *sc > 2.0).map(|(i, _)| &t.corpus.rules[i]);
+                match hit {
+                    Some(r) => format!("No rule names {label}; it is drawn but not checked. Closest rule text: Rule {} — {}.", r.rule, r.title),
+                    None => format!("No rule names {label}; it is drawn but not checked."),
+                }
+            }
+        };
+        o.issues.push(Issue { level: "info", item: it.map(|x| x.id.clone()), text, source: None });
+    }
+
+    // Building heights: storeys (Rule 69), roof parapet (Rules 77, 2(9)).
+    for b in &buildings {
+        if let Some(min) = fx.v("room.h") {
+            let clear = round2(b.floor_h() - SLAB);
+            if clear + 0.005 < min {
+                o.err(Some(b), format!("{} has {} m floor to floor, about {clear} m clear under a {SLAB} m slab; Rule 69 needs {min} m for habitable rooms.", b.label(), b.floor_h()), src(fx.get("room.h")));
+            }
+        }
+        if b.ridge() == 0.0 {
+            match (b.parapet, fx.v("parapet.h"), fx.v("parapet.excl")) {
+                (Some(p), Some(min), Some(excl)) if p > 0.0 => {
+                    if p + 0.005 < min {
+                        o.err(Some(b), format!("{} parapet is {p} m; Rule 77 needs at least {min} m.", b.label()), src(fx.get("parapet.h")));
+                    } else if p > excl + 0.005 {
+                        o.info(Some(b), format!("{} parapet {p} m is over {excl} m, so it counts in building height (Rule 2(9)).", b.label()), src(fx.get("parapet.excl")));
+                    }
+                }
+                (_, Some(min), _) => o.info(Some(b), format!("{} has no parapet; Rule 77 asks for {min} m on the edges of a usable roof.", b.label()), src(fx.get("parapet.h"))),
+                _ => {}
+            }
         }
     }
 
@@ -782,6 +1065,7 @@ fn check(t: &Track1, l: &Layout) -> Check {
         plane,
         slope: round2(slope * 1000.0) / 1000.0,
         levels: blevels,
+        custom: acks,
     }
 }
 
@@ -806,6 +1090,7 @@ fn empty(o: Out, area: f64) -> Check {
         plane: [0.0, 0.0, 0.0],
         slope: 0.0,
         levels: vec![],
+        custom: vec![],
     }
 }
 

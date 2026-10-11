@@ -10,6 +10,17 @@ const FLOOR_H = 3; // matches FLOOR_HEIGHT in src/layout.rs; stated in the UI
 const PLINTH = 0.5; // matches DEFAULT_PLINTH in src/layout.rs
 const ROAD_LEVEL = 500; // a starting road level in metres above sea level (Bhopal is ~500 m)
 
+/** The height-like field + and − step for each kind: [field, step, default]. */
+const HEIGHT_FIELD = {
+  building: ["floors", 1, 1],
+  balcony: ["on_floor", 1, 1],
+  garage: ["h", 0.1, 2.6],
+  gate: ["h", 0.1, 1.8],
+  tree: ["h", 0.5, 4],
+  custom: ["h", 0.1, 3],
+  septic_tank: ["depth", 0.1, 1],
+};
+
 /** Default sizes are starting points the user resizes; the rules check them. */
 const KINDS = {
   building: { name: "Building", w: 6, d: 10, floors: 2, fill: "#e7ecf3", stroke: "#1f3a5f" },
@@ -26,14 +37,17 @@ const KINDS = {
   gate: { name: "Gate", w: 3, d: 0.3, fill: "#3a3f44", stroke: "#1b1d1f" },
   water_body: { name: "Lake / river", w: 30, d: 12, water: "lake", fill: "#a8cfea", stroke: "#3d7fa8" },
   electric_line: { name: "Power line", line: true, voltage: "lv", stroke: "#b23b3b" },
+  custom: { name: "Custom", w: 3, d: 3, h: 3, fill: "#efe6f7", stroke: "#7a4fa3" },
 };
+/** Defaults for heights and slopes the user can step up and down. */
+const DEFAULT_H = { garage: 2.6, gate: 1.8, tree: 4, custom: 3 };
 const ADD = [
   ["building", "Building"], ["balcony", "Balcony"], ["garage", "Garage"], ["staircase", "Stair"], ["lift", "Lift"],
   ["shaft", "Shaft"], ["courtyard", "Courtyard"], ["septic_tank", "Septic"], ["parking_bay", "Parking"], ["tree", "Tree"],
-  ["rwh_pit", "RWH pit"], ["gate", "Gate"], ["water_body", "Lake/river"], ["electric_line", "Power line"],
+  ["rwh_pit", "RWH pit"], ["gate", "Gate"], ["water_body", "Lake/river"], ["electric_line", "Power line"], ["custom", "Custom…"],
 ];
 const INTERIOR = new Set(["staircase", "lift", "shaft", "courtyard"]);
-const ORDER = ["water_body", "building", "courtyard", "shaft", "staircase", "lift", "balcony", "garage", "parking_bay", "septic_tank", "rwh_pit", "tree", "gate", "electric_line"];
+const ORDER = ["water_body", "custom", "building", "courtyard", "shaft", "staircase", "lift", "balcony", "garage", "parking_bay", "septic_tank", "rwh_pit", "tree", "gate", "electric_line"];
 const EDGE_COLOR = { front: "#2f6f4f", rear: "#8a5a00", side: "#3d6fa8" };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -50,7 +64,7 @@ function template() {
     use_type: "residential",
     building_type: "detached",
     wall: null,
-    items: [{ id: "building-1", kind: "building", name: "Building 1", x: 6, y: 10, w: 6, d: 12, floors: 2 }],
+    items: [{ id: "building-1", kind: "building", name: "Building 1", x: 6, y: 10, w: 6, d: 12, floors: 2, floor_height: 3, parapet: 1.05 }],
   };
 }
 
@@ -267,7 +281,7 @@ class DrawApp {
     this.draft = null;
     this.root.querySelectorAll("[data-tool]").forEach((b) => b.classList.toggle("is-on", b.dataset.tool === t));
     const hints = {
-      select: "Drag blocks to move them, drag a corner to resize, drag plot corners to reshape. Double-click a plot edge to add a corner. Delete removes the selection. Scroll to zoom, drag empty space to pan.",
+      select: "Drag blocks to move, corners to resize; drag plot corners to reshape, double-click an edge to add one. + / − change the selected block's height, [ / ] its roof slope. Click a road to select it. Delete removes the selection.",
       plot: "Click to place each corner of the plot. Click the first corner (or press Enter) to close it. Esc cancels.",
       road: "Click a plot edge to mark it as facing the road. Click again to unmark. Corner plots can have two.",
       electric_line: "Click two points: where the power line starts and where it ends.",
@@ -298,6 +312,18 @@ class DrawApp {
       this.setTool("select");
     } else if (k === "enter" && this.tool === "plot") {
       this.finishPlot();
+    } else if ((k === "+" || k === "=" || k === "-" || k === "[" || k === "]") && this.sel?.item) {
+      const it = this.item(this.sel.item);
+      const f = HEIGHT_FIELD[it.kind];
+      const up = k === "+" || k === "=" || k === "]";
+      if ((k === "[" || k === "]") && !["building", "custom"].includes(it.kind)) return;
+      const [key, step, def] = k === "[" || k === "]" ? ["roof_pitch", 5, 0] : f ?? [];
+      if (!key) return;
+      e.preventDefault();
+      this.snapshot();
+      const min = { floors: 1, on_floor: 0, roof_pitch: 0 }[key] ?? 0.1;
+      it[key] = Math.max(min, Math.round(((it[key] ?? def) + (up ? step : -step)) * 100) / 100);
+      this.commit();
     } else if (k === "v") this.setTool("select");
     else if (k === "p") this.setTool("plot");
     else if (k === "r") this.setTool("road");
@@ -319,6 +345,7 @@ class DrawApp {
     const L = this.layout;
     this.snapshot();
     if (this.sel?.item) L.items = L.items.filter((i) => i.id !== this.sel.item);
+    else if (this.sel?.road != null) L.road_edges = L.road_edges.filter((e) => e !== this.sel.road);
     else if (this.sel?.vertex != null && L.plot.length > 3) {
       const i = this.sel.vertex;
       L.plot.splice(i, 1);
@@ -341,7 +368,8 @@ class DrawApp {
     if (k.line) Object.assign(it, { a: p, b, voltage: k.voltage });
     else {
       Object.assign(it, { x: p[0], y: p[1], w: k.w, d: k.d });
-      if (kind === "building") it.floors = k.floors;
+      if (kind === "building") Object.assign(it, { floors: k.floors, floor_height: FLOOR_H, parapet: 1.05 });
+      if (kind === "custom") Object.assign(it, { h: k.h, check_rules: true, roof_pitch: 0 });
       if (kind === "staircase") it.width = k.width;
       if (kind === "water_body") it.water = k.water;
     }
@@ -350,6 +378,8 @@ class DrawApp {
     this.sel = { item: id };
     if (kind !== "tree") this.setTool("select");
     this.commit();
+    // A custom block needs a name before the rules can recognise it.
+    if (kind === "custom") setTimeout(() => this.$('.dp-props [data-k="name"]')?.select(), 0);
   }
 
   finishPlot() {
@@ -393,7 +423,7 @@ class DrawApp {
 
   down(e) {
     const p = this.world(e);
-    const t = e.target.closest("[data-item],[data-handle],[data-vertex],[data-edge],[data-end]");
+    const t = e.target.closest("[data-item],[data-handle],[data-vertex],[data-edge],[data-end],[data-road]");
     const tool = this.tool;
     if (tool === "plot") {
       const sp = this.snp(p);
@@ -428,7 +458,10 @@ class DrawApp {
       this.svg.setPointerCapture(e.pointerId);
     } catch {}
     this.moved = false;
-    if (t?.dataset.vertex != null) {
+    if (t?.dataset.road != null && !t.dataset.item) {
+      this.sel = { road: +t.dataset.road };
+      this.drag = { type: "pan", p0: p, vb0: { ...this.vb }, m: this.svg.getScreenCTM().inverse() };
+    } else if (t?.dataset.vertex != null) {
       this.sel = { vertex: +t.dataset.vertex };
       this.drag = { type: "vertex", i: +t.dataset.vertex };
     } else if (t?.dataset.handle) {
@@ -619,7 +652,7 @@ class DrawApp {
     for (const i of L.road_edges.filter((i) => i < n)) {
       const [a2, b2] = roadQuad(P, i, L.street_width);
       const a = P[i], b = P[(i + 1) % n];
-      s += `<polygon points="${[a, b, b2, a2].map((p) => p.join(",")).join(" ")}" class="dp-road"/>`;
+      s += `<polygon points="${[a, b, b2, a2].map((p) => p.join(",")).join(" ")}" class="dp-road ${this.sel?.road === i ? "is-sel" : ""}" data-road="${i}"/>`;
       const m = [(a2[0] + b2[0] + a[0] + b[0]) / 4, (a2[1] + b2[1] + a[1] + b[1]) / 4];
       s += `<text x="${m[0]}" y="${m[1]}" class="dp-road-t" font-size="${fs}">${fmt(L.street_width)} m road · ${fmt(L.road_level)} m</text>`;
     }
@@ -691,7 +724,10 @@ class DrawApp {
       ? `<ellipse cx="${it.x}" cy="${it.y}" rx="${it.w / 2}" ry="${it.d / 2}" fill="${K.fill}" stroke="${K.stroke}" class="${cls}" data-item="${it.id}"/>`
       : `<rect x="${x}" y="${y}" width="${it.w}" height="${it.d}" fill="${K.fill}" stroke="${K.stroke}" class="${cls} dp-k-${it.kind}" data-item="${it.id}"/>`;
     const big = Math.min(it.w, it.d) / k > 34;
-    if (it.kind === "building" || (big && it.kind !== "tree"))
+    const ack = it.kind === "custom" ? this.check?.custom?.find((a) => a.id === it.id) : null;
+    if (it.kind === "custom")
+      s += `<text x="${it.x}" y="${it.y}" class="dp-item-t" font-size="${fs}" dy="${0.35 * fs}">${esc(it.name)}${ack?.as_name ? ` ≈ ${esc(ack.as_name)}${ack.checked ? "" : " (off)"}` : " · no rule"}</text>`;
+    else if (it.kind === "building" || (big && it.kind !== "tree"))
       s += `<text x="${it.x}" y="${it.y}" class="dp-item-t" font-size="${fs}" dy="${0.35 * fs}">${esc(it.name)}${it.kind === "building" ? ` · ${it.floors || 1}F${(() => {
         const lv = this.check?.levels?.find((x) => x.id === it.id);
         return lv ? ` · ${fmt(lv.rule_height)} m` : "";
@@ -733,7 +769,7 @@ class DrawApp {
     if (!lv) return (box.innerHTML = "");
     const road = c.road_level, ref = c.reference_level;
     const s0 = front - L.street_width, s1 = rear + 2;
-    const zs = [road, ref, lv.roof, at(front), at(rear), lv.ground - 1];
+    const zs = [road, ref, lv.top ?? lv.roof, (lv.roof ?? 0) + (b.parapet || 0), at(front), at(rear), lv.ground - 1];
     const z0 = Math.min(...zs) - 1, z1 = Math.max(...zs) + 2;
     const W = 1100, H = 300, pad = 46;
     const k = Math.min((W - 2 * pad) / (s1 - s0), (H - 2 * pad) / (z1 - z0));
@@ -749,18 +785,23 @@ class DrawApp {
     g += `<rect x="${X(bx0)}" y="${Y(lv.floor)}" width="${(bx1 - bx0) * k}" height="${(lv.floor - Math.min(at(bx0), at(bx1))) * k}" class="ds-plinth"/>`;
     const floors = Math.max(1, b.floors || 1);
     if (stH) g += `<rect x="${X(bx0)}" y="${Y(lv.floor + stH)}" width="${(bx1 - bx0) * k}" height="${stH * k}" class="ds-stilt"/>`;
+    const fh = b.floor_height || FLOOR_H;
     for (let f = 0; f < floors; f++) {
-      const zb = lv.floor + stH + f * FLOOR_H;
-      g += `<rect x="${X(bx0)}" y="${Y(zb + FLOOR_H)}" width="${(bx1 - bx0) * k}" height="${FLOOR_H * k}" class="ds-floor ${c.bad?.includes(b.id) ? "bad" : ""}"/>`;
+      const zb = lv.floor + stH + f * fh;
+      g += `<rect x="${X(bx0)}" y="${Y(zb + fh)}" width="${(bx1 - bx0) * k}" height="${fh * k}" class="ds-floor ${c.bad?.includes(b.id) ? "bad" : ""}"/>`;
     }
+    if (lv.top > lv.roof + 0.01 && b.roof_pitch > 0)
+      g += `<polygon points="${X(bx0)},${Y(lv.roof)} ${X(bx1)},${Y(lv.roof)} ${X(0)},${Y(lv.top)}" class="ds-roof"/>`;
+    else if (b.parapet > 0)
+      g += `<rect x="${X(bx0)}" y="${Y(lv.roof + b.parapet)}" width="${(bx1 - bx0) * k}" height="${b.parapet * k}" class="ds-parapet"/>`;
     if (b.basement) g += `<rect x="${X(bx0)}" y="${Y(lv.floor)}" width="${(bx1 - bx0) * k}" height="${2.7 * k}" class="ds-basement"/>`;
     // reference level and the height that counts
     g += `<line x1="${X(s0)}" y1="${Y(ref)}" x2="${X(s1)}" y2="${Y(ref)}" class="ds-ref"/>`;
     g += `<text x="${X(s1) - 4}" y="${Y(ref) + 16}" class="ds-t ds-ref-t" text-anchor="end">reference ${fmt(ref)} (Rule 2(34))</text>`;
     const dx = X(bx1) + 22;
-    g += `<line x1="${dx}" y1="${Y(ref)}" x2="${dx}" y2="${Y(lv.roof)}" class="ds-dim"/>`;
-    g += `<line x1="${dx - 5}" y1="${Y(lv.roof)}" x2="${dx + 5}" y2="${Y(lv.roof)}" class="ds-dim"/><line x1="${dx - 5}" y1="${Y(ref)}" x2="${dx + 5}" y2="${Y(ref)}" class="ds-dim"/>`;
-    g += `<text x="${dx + 8}" y="${(Y(ref) + Y(lv.roof)) / 2}" class="ds-t ds-h">${fmt(lv.rule_height)} m for the rules${stH ? " (stilt excluded)" : ""}</text>`;
+    g += `<line x1="${dx}" y1="${Y(ref)}" x2="${dx}" y2="${Y(lv.top)}" class="ds-dim"/>`;
+    g += `<line x1="${dx - 5}" y1="${Y(lv.top)}" x2="${dx + 5}" y2="${Y(lv.top)}" class="ds-dim"/><line x1="${dx - 5}" y1="${Y(ref)}" x2="${dx + 5}" y2="${Y(ref)}" class="ds-dim"/>`;
+    g += `<text x="${dx + 8}" y="${(Y(ref) + Y(lv.top)) / 2}" class="ds-t ds-h">${fmt(lv.rule_height)} m for the rules${stH ? " (stilt excluded)" : ""}</text>`;
     g += `<text x="${X(bx0) - 6}" y="${Y(lv.floor) + 4}" class="ds-t" text-anchor="end">floor ${fmt(lv.floor)}</text>`;
     g += `<text x="${X(bx0) - 6}" y="${Y(lv.roof) + 4}" class="ds-t" text-anchor="end">roof ${fmt(lv.roof)}</text>`;
     g += `<text x="${X(front)}" y="${H - 14}" class="ds-t" text-anchor="middle">plot edge</text>`;
@@ -822,6 +863,12 @@ class DrawApp {
     const L = this.layout;
     const num = (key, label, v, step = 0.1, min = 0) =>
       `<label class="s3-row"><span class="s3-lbl">${label}</span><input type="number" data-k="${key}" value="${fmt(v)}" step="${step}" min="${min}"></label>`;
+    const stepper = (key, label, v, step, min, unit = "") =>
+      `<div class="s3-row"><span class="s3-lbl">${label}</span><div class="dp-step">
+         <button type="button" data-dec="${key}" data-st="${step}" data-min="${min}" title="Decrease">−</button>
+         <input type="number" data-k="${key}" value="${fmt(v)}" step="${step}" min="${min}">
+         <button type="button" data-inc="${key}" data-st="${step}" title="Increase">+</button>${unit ? `<span class="dp-unit">${unit}</span>` : ""}
+       </div></div>`;
     let html = "";
     const it = this.sel?.item && this.item(this.sel.item);
     if (it) {
@@ -835,8 +882,11 @@ class DrawApp {
       } else {
         html += num("x", "Centre x", it.x) + num("y", "Centre y", it.y) + num("w", "Width", it.w, 0.1, 0.1) + num("d", "Depth", it.d, 0.1, 0.1);
         if (it.kind === "building") {
-          html += num("floors", "Floors", it.floors || 1, 1, 1);
-          html += num("plinth", "Plinth", it.plinth ?? PLINTH, 0.05, 0);
+          html += stepper("floors", "Floors", it.floors || 1, 1, 1);
+          html += stepper("floor_height", "Floor height", it.floor_height ?? FLOOR_H, 0.1, 2, "m");
+          html += stepper("roof_pitch", "Roof slope", it.roof_pitch ?? 0, 5, 0, "°");
+          if (!it.roof_pitch) html += stepper("parapet", "Parapet", it.parapet ?? 0, 0.05, 0, "m");
+          html += stepper("plinth", "Plinth", it.plinth ?? PLINTH, 0.05, 0, "m");
           html += `<label class="s3-row"><span class="s3-lbl">Basement</span><input type="checkbox" data-k="basement" ${it.basement ? "checked" : ""}></label>`;
           const lv = this.check?.levels?.find((x) => x.id === it.id);
           html += lv
@@ -845,11 +895,28 @@ class DrawApp {
           html += `<label class="s3-row"><span class="s3-lbl">Stilt parking</span><input type="checkbox" data-k="stilt" ${it.stilt ? "checked" : ""}></label>`;
         }
         if (it.kind === "staircase") html += num("width", "Flight width", it.width ?? 0.85, 0.05, 0.3);
+        if (it.kind === "balcony") html += stepper("on_floor", "On floor", it.on_floor ?? 1, 1, 0) + '<p class="dp-small">0 = ground floor.</p>';
+        if (["garage", "gate", "tree"].includes(it.kind)) html += stepper("h", "Height", it.h ?? DEFAULT_H[it.kind], it.kind === "tree" ? 0.5 : 0.1, 0.1, "m");
+        if (it.kind === "septic_tank") html += stepper("depth", "Depth", it.depth ?? 1, 0.1, 0.1, "m");
+        if (it.kind === "custom") {
+          const ack = this.check?.custom?.find((a) => a.id === it.id);
+          html += stepper("h", "Height", it.h ?? 3, 0.1, 0.1, "m") + stepper("roof_pitch", "Roof slope", it.roof_pitch ?? 0, 5, 0, "°");
+          html += `<label class="s3-row"><span class="s3-lbl">Check in rules</span><input type="checkbox" data-k="check_rules" ${it.check_rules !== false ? "checked" : ""}></label>`;
+          html += ack?.as_name
+            ? `<p class="dp-ack ${ack.checked ? "on" : ""}">${ack.checked ? "Read as" : "Looks like"} <b>${esc(ack.as_name)}</b> · ${esc(ack.rules)}${ack.checked ? "" : " — checking is off"}</p>`
+            : `<p class="dp-ack none">No rule names “${esc(it.name)}” yet. Try a name like car shed, watchman cabin, water tank, porch, sunshade, ramp, servant quarter, pump room.</p>`;
+        }
         if (it.kind === "water_body")
           html += `<label class="s3-row"><span class="s3-lbl">Type</span><select data-k="water">
             <option value="lake" ${it.water !== "river" ? "selected" : ""}>Lake / pond / nala</option><option value="river" ${it.water === "river" ? "selected" : ""}>River</option></select></label>`;
       }
       html += `<button type="button" class="dp-del">Delete ${esc(K.name.toLowerCase())}</button>`;
+    } else if (this.sel?.road != null) {
+      html = `<h4>Road on edge ${this.sel.road + 1}</h4>
+        ${num("street_width", "Road width", L.street_width, 0.5, 1)}
+        ${num("road_level", "Road level", L.road_level, 0.1)}
+        <p class="dp-small">Width and level are shared by all road edges. Removing the road turns this edge back into a plot boundary.</p>
+        <button type="button" class="dp-del">Remove road</button>`;
     } else if (this.sel?.vertex != null) {
       const p = L.plot[this.sel.vertex];
       html = `<h4>Plot corner ${this.sel.vertex + 1}</h4>${num("vx", "x", p[0])}${num("vy", "y", p[1])}
@@ -874,6 +941,16 @@ class DrawApp {
     }
     box.innerHTML = html;
     box.querySelector(".dp-del")?.addEventListener("click", () => this.remove());
+    box.querySelectorAll("[data-inc],[data-dec]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const key = b.dataset.inc ?? b.dataset.dec;
+        const inp = box.querySelector(`[data-k="${key}"]`);
+        const st = Number(b.dataset.st), min = Number(b.dataset.min ?? -Infinity);
+        const v = Math.max(min, Math.round((Number(inp.value) + (b.dataset.inc ? st : -st)) * 100) / 100);
+        inp.value = v;
+        inp.dispatchEvent(new Event("change"));
+      })
+    );
     box.querySelectorAll("[data-k]").forEach((inp) =>
       inp.addEventListener("change", () => {
         const k = inp.dataset.k;
@@ -887,6 +964,7 @@ class DrawApp {
           if (k === "vlevel") L.plot_levels[this.sel.vertex] = v;
           else L.plot[this.sel.vertex][k === "vx" ? 0 : 1] = v;
         } else if (k === "plot_level_all") L.plot_levels = L.plot.map(() => v);
+        else if (this.sel?.road != null) L[k] = v;
         else if (k === "wall") L.wall = v ? { front_h: 1.5, other_h: 2 } : null;
         else if (k === "wall_front") L.wall.front_h = v;
         else if (k === "wall_other") L.wall.other_h = v;
@@ -1064,11 +1142,21 @@ class Preview {
       switch (it.kind) {
         case "building": {
           const floors = Math.max(1, it.floors || 1);
+          const fh = it.floor_height || FLOOR_H;
           const base = it.stilt ? 2.6 : 0;
           const xray = hasInside(it);
           for (let f = 0; f < floors; f++) {
-            box(it.w, FLOOR_H - 0.2, it.d, tint(0xdfe6f0), it.x, base + f * FLOOR_H + (FLOOR_H - 0.2) / 2, it.y, xray ? { transparent: true, opacity: 0.35, depthWrite: false } : {});
-            box(it.w + 0.2, 0.2, it.d + 0.2, 0x9fb1c9, it.x, base + (f + 1) * FLOOR_H - 0.1, it.y, xray ? { transparent: true, opacity: 0.5 } : {});
+            box(it.w, fh - 0.2, it.d, tint(0xdfe6f0), it.x, base + f * fh + (fh - 0.2) / 2, it.y, xray ? { transparent: true, opacity: 0.35, depthWrite: false } : {});
+            box(it.w + 0.2, 0.2, it.d + 0.2, 0x9fb1c9, it.x, base + (f + 1) * fh - 0.1, it.y, xray ? { transparent: true, opacity: 0.5 } : {});
+          }
+          const top = base + floors * fh;
+          if (it.roof_pitch > 0) g.add(roof(it, top, it.roof_pitch, red ? 0xd46a6a : 0x9b5b3c));
+          else if (it.parapet > 0) {
+            const ph = it.parapet, t = 0.15;
+            box(it.w, ph, t, 0xc9ccc4, it.x, top + ph / 2, it.y - it.d / 2 + t / 2);
+            box(it.w, ph, t, 0xc9ccc4, it.x, top + ph / 2, it.y + it.d / 2 - t / 2);
+            box(t, ph, it.d, 0xc9ccc4, it.x - it.w / 2 + t / 2, top + ph / 2, it.y);
+            box(t, ph, it.d, 0xc9ccc4, it.x + it.w / 2 - t / 2, top + ph / 2, it.y);
           }
           if (it.stilt)
             for (const [dx, dz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) box(0.3, base, 0.3, 0xc9ccc4, it.x + (dx * (it.w - 0.4)) / 2, base / 2, it.y + (dz * (it.d - 0.4)) / 2);
@@ -1076,17 +1164,26 @@ class Preview {
         }
         case "balcony": {
           const host = buildings.find((b) => Math.abs(b.x - it.x) < (b.w + it.w) / 2 + 0.1 && Math.abs(b.y - it.y) < (b.d + it.d) / 2 + 0.1);
-          const floors = host ? Math.max(1, host.floors || 1) : 2;
           const base = host?.stilt ? 2.6 : 0;
-          for (let f = 1; f < floors; f++) {
-            box(it.w, 0.15, it.d, tint(0xc9ccc4), it.x, base + f * FLOOR_H, it.y);
-            box(it.w, 1.0, it.d, tint(0x5b6166), it.x, base + f * FLOOR_H + 0.6, it.y, { transparent: true, opacity: 0.25, depthWrite: false });
-          }
+          const fh = host?.floor_height || FLOOR_H;
+          const f = it.on_floor ?? 1; // the floor it projects from
+          box(it.w, 0.15, it.d, tint(0xc9ccc4), it.x, base + f * fh, it.y);
+          box(it.w, 1.0, it.d, tint(0x5b6166), it.x, base + f * fh + 0.6, it.y, { transparent: true, opacity: 0.25, depthWrite: false });
           break;
         }
-        case "garage":
-          box(it.w, 2.6, it.d, tint(0xd8d2c4), it.x, 1.3, it.y);
+        case "garage": {
+          const h = it.h ?? 2.6;
+          box(it.w, h, it.d, tint(0xd8d2c4), it.x, h / 2, it.y);
           break;
+        }
+        case "custom": {
+          const h = it.h ?? 3;
+          const ack = check?.custom?.find((a) => a.id === it.id);
+          const col = ack?.checked ? 0xb9a6d6 : 0xd9cdea;
+          box(it.w, h, it.d, tint(col), it.x, h / 2, it.y, { transparent: true, opacity: 0.9 });
+          if (it.roof_pitch > 0) g.add(roof(it, h, it.roof_pitch, red ? 0xd46a6a : 0x7a4fa3));
+          break;
+        }
         case "parking_bay":
           box(it.w, 0.03, it.d, 0xf4f4ef, it.x, 0.05, it.y);
           box(it.w - 0.6, 1.3, it.d - 1, 0x3d6fa8, it.x, 0.7, it.y);
@@ -1095,21 +1192,23 @@ class Preview {
         case "lift":
         case "shaft": {
           const host = buildings.find((b) => Math.abs(b.x - it.x) < b.w / 2 && Math.abs(b.y - it.y) < b.d / 2);
-          const h = host ? (host.floors || 1) * FLOOR_H + (host.stilt ? 2.6 : 0) : FLOOR_H;
+          const h = host ? (host.floors || 1) * (host.floor_height || FLOOR_H) + (host.stilt ? 2.6 : 0) : FLOOR_H;
           const col = { staircase: 0xb8925c, lift: 0x1f3a5f, shaft: 0x2a3440 }[it.kind];
           box(it.w, h + (it.kind === "shaft" ? 0.5 : 2.4), it.d, tint(col), it.x, (h + (it.kind === "shaft" ? 0.5 : 2.4)) / 2, it.y, { transparent: true, opacity: 0.75 });
           break;
         }
         case "courtyard": {
           const host = buildings.find((b) => Math.abs(b.x - it.x) < b.w / 2 && Math.abs(b.y - it.y) < b.d / 2);
-          const h = host ? (host.floors || 1) * FLOOR_H : FLOOR_H;
+          const h = host ? (host.floors || 1) * (host.floor_height || FLOOR_H) : FLOOR_H;
           box(it.w, h, it.d, tint(0x8fd0e8), it.x, h / 2, it.y, { transparent: true, opacity: 0.3, depthWrite: false });
           break;
         }
-        case "septic_tank":
-          box(it.w, 1, it.d, tint(0x8a7a64), it.x, -0.45, it.y, { transparent: true, opacity: 0.85 });
+        case "septic_tank": {
+          const dp = it.depth ?? 1;
+          box(it.w, dp, it.d, tint(0x8a7a64), it.x, -dp / 2 + 0.05, it.y, { transparent: true, opacity: 0.85 });
           box(it.w + 0.1, 0.08, it.d + 0.1, tint(0x9a8f80), it.x, 0.06, it.y);
           break;
+        }
         case "rwh_pit": {
           const m = new THREE.Mesh(new THREE.CylinderGeometry(it.w / 2, it.w / 2, 0.12, 20), mat(tint(0x5aa0c8)));
           m.position.set(it.x, 0.08, it.y);
@@ -1117,16 +1216,18 @@ class Preview {
           break;
         }
         case "tree": {
-          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 1.6, 6), mat(0x7a5a3a));
-          trunk.position.set(it.x, 0.8, it.y);
-          const crown = new THREE.Mesh(new THREE.SphereGeometry(it.w / 2 + 0.3, 10, 8), mat(0x4c8a5a));
-          crown.position.set(it.x, 2.3, it.y);
+          const th = it.h ?? 4; // overall tree height
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, th * 0.4, 6), mat(0x7a5a3a));
+          trunk.position.set(it.x, th * 0.2, it.y);
+          const r = Math.max(it.w / 2 + 0.3, th * 0.3);
+          const crown = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat(0x4c8a5a));
+          crown.position.set(it.x, th - r, it.y);
           trunk.castShadow = crown.castShadow = true;
           g.add(trunk, crown);
           break;
         }
         case "gate":
-          box(it.w, 1.4, Math.max(it.d, 0.1), tint(0x3a3f44), it.x, 0.7, it.y);
+          box(it.w, it.h ?? 1.8, Math.max(it.d, 0.1), tint(0x3a3f44), it.x, (it.h ?? 1.8) / 2, it.y);
           break;
         case "water_body":
           box(it.w, 0.05, it.d, 0x4f8fc0, it.x, 0.03, it.y, { transparent: true, opacity: 0.85 });
@@ -1157,6 +1258,25 @@ class Preview {
 }
 
 /* ---------- geometry helpers ---------- */
+
+/** Gable roof over a block: ridge along the longer side, rising tan(pitch) × half the short span. */
+function roof(it, y, pitch, color) {
+  const along = it.w >= it.d; // ridge runs along x
+  const span = along ? it.d : it.w, len = along ? it.w : it.d;
+  const rise = (span / 2) * Math.tan((Math.min(pitch, 75) * Math.PI) / 180);
+  const shape = new THREE.Shape();
+  shape.moveTo(-span / 2 - 0.3, 0);
+  shape.lineTo(span / 2 + 0.3, 0);
+  shape.lineTo(0, rise);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: len + 0.6, bevelEnabled: false });
+  geo.translate(0, 0, -(len + 0.6) / 2);
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
+  if (along) m.rotation.y = Math.PI / 2;
+  m.position.set(it.x, y, it.y);
+  m.castShadow = true;
+  return m;
+}
 
 /** Iso-level lines of the ground plane z = a·x + b·y + c, clipped to the plot outline. */
 function contours(P, [a, b, c], fs) {

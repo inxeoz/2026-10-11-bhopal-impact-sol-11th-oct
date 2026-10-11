@@ -168,3 +168,65 @@ fn plinth_and_sunken_plot() {
     assert!(e.contains("Rule 76(2)(b)"), "{e}");
     assert!(c.issues.iter().any(|i| i.text.contains("below the road centre line")));
 }
+
+fn infos(c: &Check) -> Vec<String> {
+    c.issues.iter().filter(|i| i.level == "info").map(|i| i.text.clone()).collect()
+}
+
+#[test]
+fn custom_blocks_are_read_by_name() {
+    let t = Track1::load(RULES).unwrap();
+    let c = check(&t, base(json!([
+        { "id": "A", "kind": "building", "x": 6, "y": 10, "w": 6, "d": 12, "floors": 2, "parapet": 1.05 },
+        // "Car shed" -> garage, smaller than 2.5 x 5.
+        { "id": "C1", "kind": "custom", "name": "Car shed", "x": 1.5, "y": 6, "w": 2.4, "d": 4.5 },
+        // Same block with checking off: drawn, not checked.
+        { "id": "C2", "kind": "custom", "name": "Car shed", "x": 10.5, "y": 6, "w": 2.4, "d": 4.5, "check_rules": false },
+        // "Watchman cabin" -> watchman hut; 9 sq m in the front open space is over 6 sq m.
+        { "id": "C3", "kind": "custom", "name": "Watchman cabin", "x": 9, "y": 18.5, "w": 3, "d": 3 },
+        // No rule names a swimming pool.
+        { "id": "C4", "kind": "custom", "name": "Swimming pool", "x": 6, "y": 1.5, "w": 4, "d": 2 }
+    ])));
+    let e = errors(&c).join("\n");
+    let i = infos(&c).join("\n");
+    assert!(e.contains("Car shed is 2.4 × 4.5 m; Rule 75(a)"), "{e}");
+    assert_eq!(e.matches("Rule 75(a)").count(), 1, "the unchecked copy adds no error\n{e}");
+    assert!(i.contains("‘Car shed’ is read as Garage"), "{i}");
+    assert!(i.contains("rule checking is off"), "{i}");
+    assert!(e.contains("Rule 58(4)(c) allows up to 6 sq m"), "{e}");
+    assert!(i.contains("No rule names ‘Swimming pool’"), "{i}");
+    let ack = |id: &str| c.custom.iter().find(|a| a.id == id).unwrap().clone();
+    assert_eq!(ack("C1").as_kind.as_deref(), Some("garage"));
+    assert!(ack("C1").checked && !ack("C2").checked);
+    assert_eq!(ack("C4").as_kind, None);
+}
+
+#[test]
+fn heights_and_slopes_of_components() {
+    let t = Track1::load(RULES).unwrap();
+    let c = check(&t, base(json!([
+        // 2.7 m floor to floor leaves 2.55 m under a 0.15 m slab: under Rule 69's 2.6 m.
+        { "id": "A", "kind": "building", "x": 6, "y": 10, "w": 6, "d": 12, "floors": 2, "floor_height": 2.7, "parapet": 0.9 },
+        // 30° roof on a 6 m span: ridge 3 x tan 30° = 1.73 m.
+        { "id": "R", "kind": "building", "x": 10.5, "y": 4.5, "w": 0.0, "d": 0.0, "floors": 1 },
+        { "id": "B", "kind": "balcony", "x": 6, "y": 16.6, "w": 2, "d": 1.2, "on_floor": 0 },
+        { "id": "G", "kind": "garage", "x": 1.5, "y": 6, "w": 2.5, "d": 5, "h": 2.0 },
+        { "id": "P", "kind": "septic_tank", "x": 6, "y": 1.5, "w": 1.5, "d": 0.75, "depth": 0.8 }
+    ])));
+    let e = errors(&c).join("\n");
+    for needle in ["Rule 69 needs 2.6 m", "Rule 77 needs at least 1.05 m", "first or higher floors", "Rule 75(1) needs at least 2.2 m", "Rule 79(2)(a) needs at least 1 m"] {
+        assert!(e.contains(needle), "missing {needle:?}\n{e}");
+    }
+
+    let c = check(&t, base(json!([
+        { "id": "A", "kind": "building", "x": 6, "y": 10, "w": 6, "d": 12, "floors": 2, "roof_pitch": 30 }
+    ])));
+    // 0.5 plinth + 6 m storeys + 1.73 m ridge.
+    assert_eq!(c.levels[0].rule_height, 8.23);
+    let c = check(&t, base(json!([
+        { "id": "A", "kind": "building", "x": 6, "y": 10, "w": 6, "d": 12, "floors": 2, "parapet": 1.8 }
+    ])));
+    // A 1.8 m parapet is over the 1.5 m that Rule 2(9) leaves out, so it counts.
+    assert_eq!(c.levels[0].rule_height, 8.3);
+    assert!(infos(&c).iter().any(|x| x.contains("counts in building height")));
+}

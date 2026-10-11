@@ -97,6 +97,17 @@ translated — it is always shown verbatim in the citation block.
   (68(1), 76(2)(b)), walls are measured above the street centre line (78), and contours are
   required above 1:20 (16(4)(j)). A section view draws the road, the ground, the plinth, the
   floors and the height that counts. Ask questions understand "plot is 1.5 m above the road".
+  **Custom components:** add a block and name it anything. If the name matches something
+  the rules regulate (for example "car shed" → garage, "watchman cabin" → watchman hut, "water
+  tank" → rooftop structure, "sunshade", "porch", "ramp", "servant quarter", "pump room"), the
+  tool says what it read the block as and applies that rule. A *Check in rules* switch turns
+  this off per block. A name no rule covers is drawn but not checked, and the closest rule text
+  is cited.
+  **Heights and slopes:** +/− steppers (and the + / − / [ / ] keys) for floors, floor height
+  (Rule 69 room height), roof slope (the ridge counts in height), parapet (Rule 77; above 1.5 m
+  it counts in height under 2(9)), which floor a balcony is on (58(1)(c): first floor and up),
+  garage height (75(1)), septic depth (79), and gate, tree and custom heights.
+  Roads are selectable and deletable like any other block.
   Undo/redo, snap, import/export JSON and autosave are included. **Edit in Draw plot** on any
   3D answer opens that scene in the editor.
 - **Track 1, example gallery:** 25 complex scenarios in [`static/examples.json`](static/examples.json),

@@ -47,6 +47,12 @@ const DEFS: &[Def] = &[
     // Rule 2 — definitions
     ("far.balcony_free", "2", "(30)", r"balcony \(upto a width of ([\d.]+) mtrs\.\)", 1),
     ("garage.free_sqm", "2", "(20)", r"private garage not exceeding (\d+) sq\. meters", 1),
+    // Heights and small structures: Rules 69, 75, 2(9), 58(4), 2(30)
+    ("room.h", "69", "(1)", r"rooms for human habitation shall not be less than ([\d.]+) Meters measured from the surface of the floor", 1),
+    ("garage.h", "75", "(1)", r"height of a garage shall not be less than ([\d.]+) meters", 1),
+    ("parapet.excl", "2", "(9)", r"parapet walls and architectural features not exceeding ([\d.]+) meter in height", 1),
+    ("hut.max", "58", "(4)(c)", r"Pump room and watchman hut each up to ([\d.]+) square meter", 1),
+    ("sq.max", "2", "(30)", r"servant quarter \(not exceeding (\d+) sq\. mtrs\.\)", 1),
     // Rule 16(4)(j) — contours on sloping sites
     ("slope.contour", "16", "(4)(j)", r"contours at an interval of ([\d.]+) meters in case of the site which has a slope more than 1:(\d+)", 1),
     ("slope.ratio", "16", "(4)(j)", r"contours at an interval of ([\d.]+) meters in case of the site which has a slope more than 1:(\d+)", 2),
@@ -155,6 +161,9 @@ const QUOTES: &[(&str, &str, &str, &str)] = &[
     ("below.ref.far", "76", "(6)", r"If the built form below the ground or reference level is used as habitable accommodation because of the existing topography such area may be permitted as habitable area and shall be counted in the Floor Area Ratio"),
     ("plinth.drainage", "68", "(1)", r"The plinth or any part of a building or out house shall be so located with respect to surrounding ground level that adequate drainage of the site is assured"),
     ("wall.measure", "78", "(b)", r"It shall be measured above the central line of the front street"),
+    ("porch.def", "2", "(55)", r#""porch" means a space that may be covered by cantilevered projection[^;]*"#),
+    ("height.excl", "2", "(9)", r"The following appurtenant structures shall not be included in the calculation of the height of a building if the aggregate area of such structures does not exceed one-third of the area of roof of the building upon which they are erected"),
+    ("ramp.mos", "76", "(4)(g)", r"open ramps as means of access to the basement may be permitted in such a manner that they do not obstruct the MOS in any manner"),
 ];
 
 /// Rule 42 Table 4 / Table 5 row, read from the text.

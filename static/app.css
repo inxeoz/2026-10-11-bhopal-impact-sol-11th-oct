@@ -378,3 +378,15 @@ main.wrap.is-wide{max-width:1320px}
 .ds-dim{stroke:#1f3a5f;stroke-width:1.2}
 .ds-t{font-size:12px;fill:#5b6166;font-family:inherit}
 .ds-h{fill:#1f3a5f;font-weight:650;font-size:13px}
+.dp-road{cursor:pointer}
+.dp-road.is-sel{stroke:var(--accent);stroke-width:3;vector-effect:non-scaling-stroke;fill:#3d4a5c}
+.dp-step{grid-column:2;display:flex;align-items:center;gap:4px}
+.dp-step input{flex:1;min-width:0}
+.dp-step button{appearance:none;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit;font-size:15px;line-height:1;width:28px;height:28px;border-radius:5px;cursor:pointer}
+.dp-step button:hover{border-color:var(--accent);color:var(--accent)}
+.dp-unit{font-size:12px;color:var(--faint);min-width:12px}
+.dp-ack{font-size:12.5px;margin:4px 0 8px;padding:7px 9px;border-radius:5px;background:#f4f6f8;border:1px solid #d3d7de;color:var(--muted)}
+.dp-ack.on{background:#f3eefa;border-color:#d9cdea;color:#4b2f6b}
+.dp-ack.none{background:#fbf7ee;border-color:#ece3d2;color:#6b5a3a}
+.ds-roof{fill:#c9a08a;stroke:#9b5b3c}
+.ds-parapet{fill:#c9ccc4;stroke:#8a9095}

@@ -28,7 +28,7 @@ Cerebras inference. Every answer shows its source page; when the source is silen
 1. Install Rust (stable) — `cargo --version` should work.
 2. `cp .env.example .env` and set `CEREBRASAPI=<your key>` (optional — see below).
 3. `cargo run`
-4. Open <http://127.0.0.1:8080> (tabs: Building rules, Draw plot). Use another port with
+4. Open <http://127.0.0.1:8080> (tabs: Building rules, Draw plot, Document). Use another port with
    `cargo run -- --port 8081`.
 5. `cargo test` runs the sample questions and the 25 example scenarios;
    `cargo test report_all_samples -- --ignored --nocapture` prints every sample result and
@@ -113,6 +113,12 @@ translated — it is always shown verbatim in the citation block.
   Roads are selectable and deletable like any other block.
   Undo/redo, snap, import/export JSON and autosave are included. **Edit in Draw plot** on any
   3D answer opens that scene in the editor.
+- **Document viewer (Document tab):** the full rulebook text, page by page, with a rule index,
+  go-to-page, previous/next, find in document, and a link to the original PDF at the same page
+  (`GET /api/doc`, `/doc/rules-en.pdf`). Every rule citation in the app (answers, 3D inspector,
+  Draw plot issues and open-space list) has an **Open Document** button. It jumps to the cited
+  page and highlights the quoted line, matched whitespace-insensitively, or passage by passage
+  for quotes stitched from several sentences. *Back* returns you to where you were.
 - **From an answer to a drawing:** every 3D answer has a *Want to customize? Open in Draw plot*
   button that opens the same plot, building and components in Draw plot. *Reset* next to Ask
   clears the question and answer.

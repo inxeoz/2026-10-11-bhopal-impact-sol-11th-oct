@@ -496,7 +496,7 @@ class PlotView {
 
   renderInfo() {
     const p = this.pinned, s = this.scene;
-    const cite = (x) => `<div class="cite-head"><span class="rule">${esc(x.label)}</span><span class="page">${esc(x.cite)}</span></div>
+    const cite = (x) => `<div class="cite-head"><span class="rule">${esc(x.label)}</span><span class="page">${esc(x.cite)}</span>${window.docButton ? window.docButton(x) : ""}</div>
       <pre class="quote">${esc(x.quote)}</pre>`;
     let html = "";
     if (p?.setback) html = cite(p.setback);

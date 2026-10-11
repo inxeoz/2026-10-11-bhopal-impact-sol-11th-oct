@@ -838,14 +838,14 @@ class DrawApp {
     const row = (i) => `
       <li class="dp-issue ${i.level}" ${i.item ? `data-goto="${esc(i.item)}"` : ""}>
         <span class="dp-ico">${i.level === "error" ? "✗" : "i"}</span>
-        <div><p>${esc(i.text)}</p>${i.source ? `<details><summary>${esc(i.source.label)} · ${esc(i.source.cite)}</summary><pre class="quote">${esc(i.source.quote)}</pre></details>` : ""}</div>
+        <div><p>${esc(i.text)}</p>${i.source ? `<details><summary>${esc(i.source.label)} · ${esc(i.source.cite)}</summary><pre class="quote">${esc(i.source.quote)}</pre></details>${window.docButton ? window.docButton(i.source) : ""}` : ""}</div>
       </li>`;
     const errs = c.issues.filter((i) => i.level === "error"), infos = c.issues.filter((i) => i.level !== "error");
     const reqs = (c.edges ?? []).filter((e) => e.source);
     const seen = new Set();
     const req = reqs
       .filter((e) => !seen.has(e.label) && seen.add(e.label))
-      .map((e) => `<details class="dp-req"><summary><i style="background:${EDGE_COLOR[e.class]}"></i>${esc(e.label)}</summary><pre class="quote">${esc(e.source.quote)}</pre></details>`)
+      .map((e) => `<details class="dp-req"><summary><i style="background:${EDGE_COLOR[e.class]}"></i>${esc(e.label)}</summary><pre class="quote">${esc(e.source.quote)}</pre>${window.docButton ? window.docButton(e.source) : ""}</details>`)
       .join("");
     box.innerHTML = `
       ${errs.length ? `<h4>Breaks a rule</h4><ul>${errs.map(row).join("")}</ul>` : '<p class="dp-allgood">No rule broken by this layout.</p>'}

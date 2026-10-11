@@ -19,6 +19,7 @@
       <nav class="tracks" role="tablist">
         <button class="tab" data-track="bhumi-vikas" role="tab">Building rules</button>
         <button class="tab" data-track="draw" role="tab">Draw plot</button>
+        <button class="tab" data-track="doc" role="tab">Document</button>
       </nav>
     </div>
   </header>
@@ -53,6 +54,13 @@
         M.P. Bhumi Vikas Rules, with the rule text for each problem.</p>
       <div id="draw-root"></div>
     </section>
+
+    <!-- DOCUMENT VIEWER -->
+    <section id="view-doc" class="view" hidden>
+      <p class="lede">The full text of the M.P. Bhumi Vikas Rules, 2012 (consolidated to 6 March 2025), page by page.
+        Every <b>Open Document</b> button in the app brings you here with the cited line highlighted.</p>
+      <div id="doc-root"></div>
+    </section>
   </main>
 
   <script type="importmap">
@@ -60,6 +68,7 @@
   </script>
   <script type="module" src="/scene3d.js"></script>
   <script type="module" src="/draw.js"></script>
+  <script src="/doc.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

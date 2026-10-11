@@ -12,7 +12,8 @@ function setTrack(track) {
   state.track = track;
   $$(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.track === track));
   $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + track));
-  document.body.classList.toggle("is-wide", track === "draw");
+  document.body.classList.toggle("is-wide", track === "draw" || track === "doc");
+  if (track === "doc") window.docViewer?.mount();
   if (track === "draw") mountDraw();
   history.replaceState(null, "", track === "bhumi-vikas" ? location.pathname : "#" + track);
 }
@@ -125,7 +126,7 @@ function renderAnswer(a) {
   const cites = (a.sources || [])
     .map(
       (s) => `<div class="cite">
-        <div class="cite-head"><span class="rule">${esc(s.label)}</span><span class="page">${esc(s.cite)}</span></div>
+        <div class="cite-head"><span class="rule">${esc(s.label)}</span><span class="page">${esc(s.cite)}</span>${window.docButton ? window.docButton(s) : ""}</div>
         <pre class="quote">${esc(s.quote)}</pre></div>`
     )
     .join("");
@@ -201,4 +202,4 @@ function dim(x, y1, y2, label) {
     <text x="${x - 8}" y="${mid + 3}" class="d-dim-t">${label}</text>`;
 }
 
-setTrack(location.hash === "#draw" ? "draw" : "bhumi-vikas");
+setTrack({ "#draw": "draw", "#doc": "doc" }[location.hash] ?? "bhumi-vikas");

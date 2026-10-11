@@ -8,15 +8,20 @@ use axum::{
 };
 use models::{Answer, AskRequest, GhatsResponse, Lang};
 use std::sync::Arc;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 const RULES: &str = "track-1-bhumi-vikas-sahayak/data/bhumi_vikas_rules.jsonl";
 const GHATS: &str = "track-2-visarjan-ghat-watch/data/bhopal_ghats_2023_2025.csv";
+/// The rulebook text, page by page (the same pdftotext output the rules JSONL was split from).
+const RULES_TEXT: &str = "track-1-bhumi-vikas-sahayak/data/bhumi_vikas_rules_fulltext_by_page.txt";
+const RULES_PDF: &str = "track-1-bhumi-vikas-sahayak/resources/MP_Bhumi_Vikas_Rules_2012_upto_2025-03-06_EN.pdf";
 
 struct App {
     track1: track1::Track1,
     ghats: GhatsResponse,
     llm: llm::Llm,
+    /// GET /api/doc, built once.
+    doc: serde_json::Value,
 }
 
 #[tokio::main]
@@ -36,7 +41,8 @@ async fn main() {
     let ghats = track2.rank(&llm).await;
     println!("Loaded {} rules, {} readings across {} ghats.", track1.corpus.rules.len(), 1524, ghats.ghats.len());
 
-    let app = Arc::new(App { track1, ghats, llm });
+    let doc = load_doc(&track1);
+    let app = Arc::new(App { track1, ghats, llm, doc });
 
     let router = Router::new()
         .route("/api/ask", post(ask))
@@ -45,6 +51,8 @@ async fn main() {
         .route("/api/catalog", get(catalog_handler))
         .route("/api/check", post(check_handler))
         .route("/api/health", get(|| async { "ok" }))
+        .route("/api/doc", get(doc_handler))
+        .route_service("/doc/rules-en.pdf", ServeFile::new(RULES_PDF))
         .fallback_service(ServeDir::new("static"))
         .with_state(app);
 
@@ -84,6 +92,53 @@ fn port_from_args() -> u16 {
 
 async fn ghats_handler(State(app): State<Arc<App>>) -> Json<GhatsResponse> {
     Json(app.ghats.clone())
+}
+
+/// The Document viewer: every page of the rulebook text, and an index of rules by page.
+fn load_doc(t: &track1::Track1) -> serde_json::Value {
+    let text = std::fs::read_to_string(RULES_TEXT).unwrap_or_default();
+    let mut pages = vec![];
+    let mut cur: Option<(u32, String)> = None;
+    for line in text.lines() {
+        let marker = line
+            .strip_prefix("===== PDF page ")
+            .and_then(|r| r.strip_suffix(" ====="))
+            .and_then(|n| n.trim().parse::<u32>().ok());
+        match marker {
+            Some(n) => {
+                if let Some((p, body)) = cur.take() {
+                    pages.push(serde_json::json!({ "page": p, "text": body.trim_end() }));
+                }
+                cur = Some((n, String::new()));
+            }
+            None => {
+                if let Some((_, body)) = cur.as_mut() {
+                    body.push_str(line);
+                    body.push('\n');
+                }
+            }
+        }
+    }
+    if let Some((p, body)) = cur {
+        pages.push(serde_json::json!({ "page": p, "text": body.trim_end() }));
+    }
+    let rules: Vec<_> = t
+        .corpus
+        .rules
+        .iter()
+        .map(|r| serde_json::json!({ "rule": r.rule, "title": r.title, "page": r.page_start }))
+        .collect();
+    println!("Document viewer: {} pages.", pages.len());
+    serde_json::json!({
+        "title": "M.P. Bhumi Vikas Rules, 2012 (consolidated to 6 March 2025)",
+        "pdf": "/doc/rules-en.pdf",
+        "pages": pages,
+        "rules": rules,
+    })
+}
+
+async fn doc_handler(State(app): State<Arc<App>>) -> Json<serde_json::Value> {
+    Json(app.doc.clone())
 }
 
 /// Draw plot: check a hand-drawn layout against the rules.

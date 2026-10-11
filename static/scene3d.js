@@ -51,6 +51,10 @@ export function mountScene(host, scene) {
   active = new PlotView(host, scene);
 }
 window.mountScene = mountScene;
+window.disposeScene = () => {
+  active?.dispose();
+  active = null;
+};
 
 class PlotView {
   constructor(host, scene) {
@@ -65,6 +69,10 @@ class PlotView {
     this.xray = scene.components.some((c) => INSIDE.has(c.id));
 
     host.innerHTML = `
+      <div class="s3-cta">
+        <div><b>Want to customize?</b> Move things around and check them against the rules as you go.</div>
+        <button type="button" class="primary" data-edit>Open in Draw plot →</button>
+      </div>
       <div class="s3-stage">
         <div class="s3-canvas"></div>
         <div class="s3-tip" hidden></div>
@@ -73,7 +81,6 @@ class PlotView {
           <button type="button" data-view="top">Top</button>
           <button type="button" data-view="street">Street</button>
           <button type="button" data-xray class="${this.xray ? "is-on" : ""}" title="See inside the building">X-ray</button>
-          <button type="button" data-edit title="Open this scene in Draw plot to move things around">Edit in Draw plot</button>
         </div>
         <div class="s3-status"></div>
         <p class="s3-hint">Drag to orbit · scroll to zoom · right-drag to pan · click anything for its rule</p>
@@ -148,6 +155,7 @@ class PlotView {
     this.$("[data-edit]").addEventListener("click", () => {
       // Show the tab first so the editor can size itself, then load the layout.
       document.querySelector('.tab[data-track="draw"]')?.click();
+      window.scrollTo({ top: 0 });
       const layout = sceneToLayout(this.scene);
       const go = (n = 0) => (window.drawPlot ? window.drawPlot.open(layout) : n < 60 && setTimeout(() => go(n + 1), 50));
       setTimeout(go, 0);

@@ -12,7 +12,7 @@ function setTrack(track) {
   state.track = track;
   $$(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.track === track));
   $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + track));
-  $("main").classList.toggle("is-wide", track === "draw");
+  document.body.classList.toggle("is-wide", track === "draw");
   if (track === "draw") mountDraw();
   history.replaceState(null, "", track === "bhumi-vikas" ? location.pathname : "#" + track);
 }
@@ -93,6 +93,15 @@ function setLang(lang) {
 }
 
 loadExamples();
+
+/* Reset: back to an empty question with the example gallery open. */
+$("#reset").addEventListener("click", () => {
+  $("#q").value = "";
+  window.disposeScene?.();
+  $("#answer").innerHTML = "";
+  $("#examples").classList.remove("is-collapsed");
+  $("#q").focus();
+});
 
 async function ask(question) {
   const box = $("#answer");

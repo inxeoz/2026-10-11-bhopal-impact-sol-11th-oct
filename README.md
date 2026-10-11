@@ -1,4 +1,7 @@
-# Bhopal Sahayak
+# Rules Checker
+
+*(formerly Bhopal Sahayak)* — ask about the M.P. Bhumi Vikas Rules, 2012 and see the answer in 3D,
+or draw your own plot and check it against the rules.
 
 One lookup tool for two Bhopal decisions: **building-permission questions** (Track 1) and
 **pre-visarjan ghat water risk** (Track 2). Built at Bhopal Impact Lab 2026 with Claude Code and
@@ -110,6 +113,9 @@ translated — it is always shown verbatim in the citation block.
   Roads are selectable and deletable like any other block.
   Undo/redo, snap, import/export JSON and autosave are included. **Edit in Draw plot** on any
   3D answer opens that scene in the editor.
+- **From an answer to a drawing:** every 3D answer has a *Want to customize? Open in Draw plot*
+  button that opens the same plot, building and components in Draw plot. *Reset* next to Ask
+  clears the question and answer.
 - **Track 1, example gallery:** 25 complex scenarios in [`static/examples.json`](static/examples.json),
   grouped as Homes, Tall buildings, Other uses, Surroundings and Hindi. Examples include a row
   house that wants stilt parking on a plot too small for it, a 24 m building on a road too narrow

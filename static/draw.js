@@ -105,8 +105,8 @@ class DrawApp {
             <button type="button" data-tool="plot" title="Draw a new plot outline: click corners, click the first corner to close (P)">Draw plot</button>
             <button type="button" data-tool="road" title="Click a plot edge to mark it as facing the road (R)">Road edge</button>
           </div>
-          <div class="dp-group dp-add">${ADD.map(([k, t]) => `<button type="button" data-tool="${k}" title="Add ${esc(KINDS[k].name)}">+ ${t}</button>`).join("")}</div>
-          <div class="dp-group">
+          <div class="dp-group dp-add"><span class="dp-add-l">Add</span>${ADD.map(([k, t]) => `<button type="button" data-tool="${k}" title="Add ${esc(KINDS[k].name)}">+ ${t}</button>`).join("")}</div>
+          <div class="dp-group dp-actions">
             <button type="button" data-act="undo" title="Undo (Ctrl+Z)">Undo</button>
             <button type="button" data-act="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
             <button type="button" data-act="fit" title="Fit the plot in view">Fit</button>
@@ -683,8 +683,10 @@ class DrawApp {
 
     for (const it of items.filter((i) => i.kind !== "water_body")) s += this.svgItem(it, bad, fs);
 
-    // corner levels (m above sea level)
-    P.forEach((p, i) => {
+    // corner levels (m above sea level) — only worth showing when they differ from the road
+    const lvs = L.plot_levels ?? [];
+    const showLevels = lvs.some((v) => Math.abs(v - (L.road_level ?? v)) > 0.005);
+    if (showLevels) P.forEach((p, i) => {
       const lv = L.plot_levels?.[i];
       if (lv == null) return;
       s += `<text x="${p[0]}" y="${p[1]}" dx="${9 * k}" dy="${-7 * k}" class="dp-level-t" font-size="${fs * 0.9}">▲ ${fmt(lv)}</text>`;

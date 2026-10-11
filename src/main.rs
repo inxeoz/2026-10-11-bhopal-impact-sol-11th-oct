@@ -67,7 +67,7 @@ async fn main() {
         .with_state(app);
 
     let port = port_from_args();
-    let addr = format!("127.0.0.1:{port}");
+    let addr = format!("0.0.0.0:{port}");
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
@@ -75,11 +75,11 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    println!("Open http://{addr}");
+    println!("Listening on {addr}. Open http://127.0.0.1:{port}");
     axum::serve(listener, router).await.unwrap();
 }
 
-/// `--port <n>` / `--port=<n>` / `-p <n>`, default 8080.
+/// `--port <n>` / `--port=<n>` / `-p <n>`, else the `PORT` env var (set by hosts), default 8080.
 fn port_from_args() -> u16 {
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -97,7 +97,7 @@ fn port_from_args() -> u16 {
             }
         }
     }
-    8080
+    std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080)
 }
 
 async fn ghats_handler(State(app): State<Arc<App>>) -> Json<GhatsResponse> {

@@ -25,7 +25,7 @@ Cerebras inference. Every answer shows its source page; when the source is silen
 1. Install Rust (stable) — `cargo --version` should work.
 2. `cp .env.example .env` and set `CEREBRASAPI=<your key>` (optional — see below).
 3. `cargo run`
-4. Open <http://127.0.0.1:8080> and pick a track. Use another port with
+4. Open <http://127.0.0.1:8080> (tabs: Building rules, Draw plot). Use another port with
    `cargo run -- --port 8081`.
 5. `cargo test` runs the sample questions and the 25 example scenarios;
    `cargo test report_all_samples -- --ignored --nocapture` prints every sample result and
@@ -61,8 +61,8 @@ translated — it is always shown verbatim in the citation block.
   ranked with the worst dissolved-oxygen reading as the headline; `not sampled` is shown as missing,
   never as clean; EN/HI brief generated.
 
-- **Visuals (hand-drawn SVG, no chart library):** Track 2 shows a risk-score bar chart, a per-ghat
-  pass/fail/missing bar, and a dissolved-oxygen trend line against the ≥5 mg/l limit.
+- **Track 2 in the web UI:** the Ghat water risk tab was removed. The ranking still runs on the
+  server (`src/track2.rs`, `GET /api/ghats`) and is covered by the tests.
 - **Track 1, 3D plot (Three.js, vendored in `static/vendor/`):** every plot-shaped question builds
   a 3D scene composed from a **catalog of components read out of all 106 rules**
   ([`docs/3d-catalog.md`](docs/3d-catalog.md)). Open spaces come from the rule that governs the

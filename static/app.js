@@ -5,14 +5,13 @@ const esc = (s) =>
 const slug = (t) => "tier-" + t.toLowerCase().replace(/[^a-z]+/g, "-").replace(/-+$/, "");
 const num = (v, d = 1) => (v == null ? "—" : Number(v).toFixed(d).replace(/\.0$/, ""));
 
-let state = { track: "bhumi-vikas", lang: "en", ghatsLoaded: false, ghats: null };
+let state = { track: "bhumi-vikas", lang: "en" };
 
 /* ---------- track switching ---------- */
 function setTrack(track) {
   state.track = track;
   $$(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.track === track));
   $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + track));
-  if (track === "visarjan" && !state.ghatsLoaded) loadGhats();
   $("main").classList.toggle("is-wide", track === "draw");
   if (track === "draw") mountDraw();
   history.replaceState(null, "", track === "bhumi-vikas" ? location.pathname : "#" + track);
@@ -193,142 +192,4 @@ function dim(x, y1, y2, label) {
     <text x="${x - 8}" y="${mid + 3}" class="d-dim-t">${label}</text>`;
 }
 
-/* ---------- track 2 ---------- */
-async function loadGhats() {
-  $("#ghats").innerHTML = '<p class="spinner">Ranking ghats…</p>';
-  try {
-    const data = await (await fetch("/api/ghats")).json();
-    state.ghats = data;
-    state.ghatsLoaded = true;
-    renderGhats(data);
-  } catch (err) {
-    $("#ghats").innerHTML = `<p class="spinner">Could not load ghat data: ${esc(err.message)}</p>`;
-  }
-}
-
-function renderGhats(data) {
-  $("#score-chart").innerHTML = `
-    <div class="panel">
-      <h2 class="panel-title">Risk score by ghat</h2>
-      <p class="panel-sub">Weighted breaches of CPCB Class B, dissolved oxygen weighted heaviest.</p>
-      ${scoreBars(data.ghats)}
-    </div>`;
-
-  $("#brief").innerHTML = `
-    <div class="brief">
-      <div class="brief-head">
-        <h2>Brief to forward</h2>
-        <div class="lang"><button type="button" class="lang-btn is-on" data-brief="en">EN</button>
-          <button type="button" class="lang-btn" data-brief="hi">हिं</button></div>
-      </div>
-      <pre id="brief-text">${esc(data.brief_en)}</pre>
-    </div>`;
-  $$("[data-brief]").forEach((b) =>
-    b.addEventListener("click", () => {
-      $$("[data-brief]").forEach((x) => x.classList.toggle("is-on", x === b));
-      $("#brief-text").textContent = b.dataset.brief === "hi" ? data.brief_hi : data.brief_en;
-    })
-  );
-
-  $("#ghats").innerHTML = data.ghats
-    .map((g) => {
-      const ev = g.evidence
-        .map(
-          (e) => `<tr><td>${esc(e.parameter)}</td><td>${esc(e.value)}</td><td>${esc(e.phase)}</td>
-            <td class="v-${esc(e.verdict)}">${esc(e.verdict)}</td><td>${esc(e.cite)}</td></tr>`
-        )
-        .join("");
-      return `<article class="ghat${g.rank === 1 ? " open" : ""}">
-        <div class="ghat-head">
-          <span class="rank">${g.rank}</span>
-          <div><div class="ghat-name">${esc(g.ghat)}</div><div class="ghat-body">${esc(g.water_body)}</div></div>
-          <span class="tier ${slug(g.tier)}">${esc(g.tier)}</span>
-        </div>
-        <div class="ghat-bar">${readBar(g.counts)}</div>
-        <div class="ghat-detail">
-          <p class="reason">${esc(g.reason)}</p>
-          <div class="chart-block">
-            <div class="chart-title">Dissolved oxygen across test points <span class="hint">(limit ≥5 mg/l)</span></div>
-            ${svgDO(g.do_series)}
-          </div>
-          ${ev ? `<table class="ev"><thead><tr><th>Parameter</th><th>Value</th><th>Phase</th><th>Verdict</th><th>Source</th></tr></thead><tbody>${ev}</tbody></table>` : ""}
-        </div>
-      </article>`;
-    })
-    .join("");
-  $$(".ghat-head").forEach((h) => h.addEventListener("click", () => h.parentElement.classList.toggle("open")));
-  $("#ghats-note").textContent = data.note;
-}
-
-function scoreBars(ghats) {
-  const max = Math.max(...ghats.map((g) => g.score), 1);
-  return ghats
-    .map(
-      (g) => `<div class="sb">
-        <span class="sb-name">${esc(g.ghat)}</span>
-        <span class="sb-track"><span class="sb-fill ${slug(g.tier)}" style="width:${(g.score / max) * 100}%"></span></span>
-        <span class="sb-val">${g.score.toFixed(1)}</span>
-      </div>`
-    )
-    .join("");
-}
-
-function readBar(c) {
-  const t = c.pass + c.fail + c.low + c.missing || 1;
-  const seg = (n, cls) => (n ? `<span class="r-${cls}" style="width:${(n / t) * 100}%"></span>` : "");
-  return `<span class="rbar" title="fail ${c.fail} · low ${c.low} · missing ${c.missing} · pass ${c.pass}">
-    ${seg(c.fail, "fail")}${seg(c.low, "low")}${seg(c.missing, "miss")}${seg(c.pass, "pass")}</span>
-    <span class="rbar-key">${c.fail} fail · ${c.missing} missing · ${c.pass} pass</span>`;
-}
-
-/* ---------- track 2: dissolved-oxygen line chart ---------- */
-function svgDO(series) {
-  if (!series || !series.length) return "";
-  const W = 660, H = 210, pl = 34, pr = 12, pt = 14, pb = 30;
-  const iw = W - pl - pr, ih = H - pt - pb;
-  const present = series.map((p, i) => [i, p.value]).filter(([, v]) => v != null);
-  const maxY = Math.max(10, ...present.map(([, v]) => v), 5);
-  const X = (i) => pl + (series.length > 1 ? (iw * i) / (series.length - 1) : iw / 2);
-  const Y = (v) => pt + ih * (1 - v / maxY);
-
-  let grid = "";
-  for (const g of [0, 5, 10]) {
-    if (g > maxY) continue;
-    grid += `<line x1="${pl}" y1="${Y(g)}" x2="${W - pr}" y2="${Y(g)}" class="c-grid"/>
-      <text x="${pl - 6}" y="${Y(g) + 3}" class="c-axis">${g}</text>`;
-  }
-
-  // Contiguous runs of present values -> one polyline each (gaps stay gaps).
-  let runs = [], cur = [];
-  series.forEach((p, i) => {
-    if (p.value == null) {
-      if (cur.length) runs.push(cur), (cur = []);
-    } else cur.push([X(i), Y(p.value)]);
-  });
-  if (cur.length) runs.push(cur);
-  const lines = runs
-    .filter((r) => r.length > 1)
-    .map((r) => `<polyline points="${r.map((p) => p.join(",")).join(" ")}" class="c-line"/>`)
-    .join("");
-
-  const dots = present
-    .map(([i, v]) => `<circle cx="${X(i)}" cy="${Y(v)}" r="3.2" class="c-dot ${v < 5 ? "bad" : "good"}"/>`)
-    .join("");
-
-  const misses = series
-    .map((p, i) => (p.value == null ? `<line x1="${X(i)}" y1="${Y(0)}" x2="${X(i)}" y2="${Y(0) - 5}" class="c-miss"/>` : ""))
-    .join("");
-
-  const labels = series
-    .map((p, i) => (p.label.endsWith("pre") ? `<text x="${X(i)}" y="${H - 8}" class="c-axis">${esc(p.label.replace(" pre", ""))}</text>` : ""))
-    .join("");
-
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Dissolved oxygen over test points">
-    ${grid}
-    <line x1="${pl}" y1="${Y(5)}" x2="${W - pr}" y2="${Y(5)}" class="c-limit"/>
-    <text x="${W - pr}" y="${Y(5) - 4}" class="c-limit-t">limit ≥5</text>
-    ${misses}${lines}${dots}${labels}
-  </svg>`;
-}
-
-setTrack({ "#visarjan": "visarjan", "#draw": "draw" }[location.hash] ?? "bhumi-vikas");
+setTrack(location.hash === "#draw" ? "draw" : "bhumi-vikas");

@@ -45,10 +45,38 @@ async fn main() {
         .fallback_service(ServeDir::new("static"))
         .with_state(app);
 
-    let addr = "127.0.0.1:8080";
-    let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
+    let port = port_from_args();
+    let addr = format!("127.0.0.1:{port}");
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Could not bind {addr}: {e}. Try another port: cargo run -- --port 8081");
+            std::process::exit(1);
+        }
+    };
     println!("Open http://{addr}");
     axum::serve(listener, router).await.unwrap();
+}
+
+/// `--port <n>` / `--port=<n>` / `-p <n>`, default 8080.
+fn port_from_args() -> u16 {
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        let val = match a.as_str() {
+            "--port" | "-p" => args.next(),
+            _ => a.strip_prefix("--port=").map(str::to_string),
+        };
+        if let Some(v) = val {
+            match v.parse() {
+                Ok(p) => return p,
+                Err(_) => {
+                    eprintln!("Invalid port: {v}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+    8080
 }
 
 async fn ghats_handler(State(app): State<Arc<App>>) -> Json<GhatsResponse> {

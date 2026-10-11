@@ -25,7 +25,8 @@ Cerebras inference. Every answer shows its source page; when the source is silen
 1. Install Rust (stable) — `cargo --version` should work.
 2. `cp .env.example .env` and set `CEREBRASAPI=<your key>` (optional — see below).
 3. `cargo run`
-4. Open <http://127.0.0.1:8080> and pick a track.
+4. Open <http://127.0.0.1:8080> and pick a track. Use another port with
+   `cargo run -- --port 8081`.
 5. `cargo test` runs the sample questions; `cargo test report_all_samples -- --ignored --nocapture` prints every result.
 
 No key? The tool still runs entirely on its deterministic core (retrieval + table parsing + CPCB

@@ -1,6 +1,6 @@
-# Rules Checker
+# Bhumi Rule checker
 
-*(formerly Bhopal Sahayak)* — ask about the M.P. Bhumi Vikas Rules, 2012 and see the answer in 3D,
+*(formerly Rules Checker / Bhopal Sahayak)* — ask about the M.P. Bhumi Vikas Rules, 2012 and see the answer in 3D,
 or draw your own plot and check it against the rules.
 
 One lookup tool for two Bhopal decisions: **building-permission questions** (Track 1) and

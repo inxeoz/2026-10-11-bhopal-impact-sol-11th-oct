@@ -93,6 +93,13 @@ impl SceneInput {
         if let Some(k) = d.building_type.as_deref().filter(|k| matches!(*k, "detached" | "semi-detached" | "row")) {
             self.building_type = Some(k.to_string());
         }
+        if let Some(r) = d.plot_rise.filter(|r| r.is_finite()) {
+            self.plot_rise = Some(r);
+        }
+        if let Some(ids) = &d.components {
+            let ids: Vec<&str> = ids.iter().map(String::as_str).filter(|id| catalog::entry(id).is_some()).collect();
+            self.components = Some(ids.join(","));
+        }
     }
 
     /// Add catalog ids (e.g. picked by the model) to the ones already matched.

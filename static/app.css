@@ -97,9 +97,6 @@ main.wrap{padding-top:28px;padding-bottom:80px}
 @media (max-width:520px){.voice-clip .clip-send{flex-basis:100%;margin-left:0;order:2}.voice-clip .clip-device{flex-basis:100%;max-width:none;order:1}}
 .voice-status{margin:8px 0 0;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .voice-status.is-error{color:var(--high)}
-.lang{display:flex;border:1px solid var(--line-strong);border-radius:var(--radius);overflow:hidden}
-.lang-btn{appearance:none;border:0;background:var(--panel);color:var(--muted);padding:12px 12px;font:inherit;font-size:13px;cursor:pointer}
-.lang-btn.is-on{background:var(--accent);color:#fff}
 .primary{
   appearance:none;border:0;background:var(--accent);color:#fff;font:inherit;font-weight:550;
   padding:12px 22px;border-radius:var(--radius);cursor:pointer
@@ -141,6 +138,16 @@ main.wrap{padding-top:28px;padding-bottom:80px}
 .details-summary{margin:10px 0 0;font-size:13px;color:var(--muted)}
 .details-summary .clip-link{margin-left:6px;color:var(--accent)}
 @media (max-width:520px){.details-options{grid-template-columns:1fr 1fr;padding:0 16px}.details-other{margin:14px 16px 0}.details-foot{padding:12px 16px 16px}}
+
+/* ---- answer sections: rules applied, then the plot ---- */
+.rules{border-top:1px solid var(--line)}
+.rules > .s3-title{margin:0;padding:16px 22px 0}
+.rules > .s3-title + .cite{border-top:0;padding-top:10px}
+.s3-apply{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.s3-apply-note{font-size:12.5px;color:var(--muted)}
+.s3-apply-note.is-dirty{color:var(--med);font-weight:550}
+.s3-apply .primary{padding:9px 18px;font-size:13.5px}
+@media (max-width:520px){.s3-apply .primary{flex-basis:100%}}
 
 /* ---- citations ---- */
 .cite{border-top:1px solid var(--line);padding:16px 22px}

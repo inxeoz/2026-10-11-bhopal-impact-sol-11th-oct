@@ -46,10 +46,12 @@ const catalog = () => (catalogP ??= fetch("/api/catalog").then((r) => r.json()).
 let active = null; // only one live scene at a time
 let LABEL_SCALE = 1; // labels grow with the plot so they stay readable
 
-/** Mount an interactive 3D scene for `scene` (the /api/scene shape) into `host`. */
-export function mountScene(host, scene) {
+/** Mount an interactive 3D scene for `scene` (the /api/scene shape) into `host`.
+ * With `onApply`, edits to the settings wait for "Apply changes", which hands the plot as set
+ * to `onApply(details)` (the answer is then asked again); without it they redraw at once. */
+export function mountScene(host, scene, opts = {}) {
   if (active) active.dispose();
-  active = new PlotView(host, scene);
+  active = new PlotView(host, scene, opts);
 }
 window.mountScene = mountScene;
 window.disposeScene = () => {
@@ -58,10 +60,11 @@ window.disposeScene = () => {
 };
 
 class PlotView {
-  constructor(host, scene) {
+  constructor(host, scene, { onApply = null } = {}) {
     this.host = host;
     this.scene = scene;
     this.input = initialInput(scene);
+    this.onApply = onApply;
     this.pinned = null;
     this.hovered = null;
     this.pickables = [];
@@ -88,8 +91,13 @@ class PlotView {
         <div class="s3-info" data-testid="scene-info"></div>
         <form class="s3-controls" data-testid="scene-controls" autocomplete="off"></form>
       </div>
-      <div class="s3-palette" data-testid="scene-palette"></div>`;
+      <div class="s3-palette" data-testid="scene-palette"></div>
+      ${onApply ? `<div class="s3-apply" data-testid="scene-apply-bar">
+        <span class="s3-apply-note" data-testid="scene-apply-note">Change the plot above, then apply to update the answer and rules.</span>
+        <button type="button" class="primary" data-testid="scene-apply" disabled>Apply changes</button>
+      </div>` : ""}`;
     this.$ = (s) => host.querySelector(s);
+    this.$('[data-testid="scene-apply"]')?.addEventListener("click", () => this.apply());
 
     if (!webglOK()) {
       this.$(".s3-canvas").innerHTML = '<p class="s3-nogl" data-testid="scene-no-webgl">3D view needs WebGL, which this browser has turned off.</p>';
@@ -544,18 +552,25 @@ class PlotView {
         this.input[r.name] = Number(r.value);
         if (r.name === "height") delete this.input.floors;
         r.nextElementSibling.textContent = `${fmt(r.value)} ${r.name === "plot_area" ? "sq m" : "m"}`;
-        this.refetch();
+        // Until frontage is set by hand it follows the area, as the server would derive it.
+        if (r.name === "plot_area" && this.input.frontage == null) {
+          const f = form.querySelector('input[name="frontage"]');
+          f.value = frontageFor(this.input.plot_area);
+          f.nextElementSibling.textContent = `${fmt(f.value)} m`;
+        }
+        this.changed();
       })
     );
     form.querySelector("select").addEventListener("change", (e) => {
       this.input.use_type = e.target.value;
-      this.refetch(true);
+      form.querySelector('[data-testid="scene-control-type-field"]').hidden = e.target.value !== "residential";
+      this.changed(true);
     });
     form.querySelectorAll("[data-kind]").forEach((b) =>
       b.addEventListener("click", () => {
         this.input.building_type = b.dataset.kind;
         form.querySelectorAll("[data-kind]").forEach((x) => x.classList.toggle("is-on", x === b));
-        this.refetch();
+        this.changed();
       })
     );
   }
@@ -604,9 +619,38 @@ class PlotView {
           this.pinned = { component: id };
         }
         this.input.components = [...list];
-        this.refetch(true);
+        if (this.onApply) this.renderPalette();
+        this.changed(true);
       })
     );
+  }
+
+  /** An edit: wait for "Apply changes" when the answer is asked again, else redraw now. */
+  changed(now = false) {
+    if (!this.onApply) return this.refetch(now);
+    this.$('[data-testid="scene-apply"]').disabled = false;
+    const note = this.$('[data-testid="scene-apply-note"]');
+    note.textContent = "Changes not applied yet.";
+    note.classList.add("is-dirty");
+  }
+
+  /** The plot exactly as the settings show it, asked again as the answer's details. */
+  apply() {
+    const i = this.input, s = this.scene;
+    const area = i.plot_area ?? s.plot_area_sqm;
+    const btn = this.$('[data-testid="scene-apply"]');
+    btn.disabled = true;
+    btn.textContent = "Applying…";
+    this.onApply({
+      use_type: i.use_type ?? s.use_type,
+      plot_area: area,
+      frontage: i.frontage ?? (area === s.plot_area_sqm ? s.frontage_m : frontageFor(area)),
+      street_width: i.street_width ?? s.street_width_m,
+      height: i.height ?? s.height_m,
+      building_type: i.building_type ?? s.building_type,
+      plot_rise: i.plot_rise ?? s.plot_rise_m ?? 0,
+      components: i.components,
+    });
   }
 
   refetch(now = false) {
@@ -643,6 +687,9 @@ class PlotView {
 }
 
 /* ---------- helpers ---------- */
+
+/** Frontage for an area when none is given: depth 1.5 x frontage (DEPTH_RATIO in src/scene.rs). */
+const frontageFor = (area) => Math.round(Math.sqrt(area / 1.5) * 2) / 2;
 
 /** The composed scene as a Draw-plot layout: same plot, building and components, ready to move. */
 function sceneToLayout(s) {

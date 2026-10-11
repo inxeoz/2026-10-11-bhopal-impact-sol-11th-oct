@@ -51,7 +51,9 @@ impl Llm {
         let mut body = json!({
             "model": model,
             "temperature": 0.1,
-            "max_tokens": 700,
+            // The models reason before answering; a Hindi translation of a long detail took
+            // ~1,400 tokens, and a cut-off reply is empty (the English then stays).
+            "max_tokens": 3000,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},

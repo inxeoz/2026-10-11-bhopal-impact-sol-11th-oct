@@ -4,7 +4,7 @@
 use bhopal_sahayak::llm::Llm;
 use bhopal_sahayak::models::{Details, Lang};
 use bhopal_sahayak::scene::SceneInput;
-use bhopal_sahayak::track1::Track1;
+use bhopal_sahayak::track1::{Numbers, Track1};
 use bhopal_sahayak::track2::{classify, Track2};
 use bhopal_sahayak::models::Verdict;
 
@@ -27,6 +27,18 @@ async fn front_open_space_q1() {
     assert!(a.sources[0].label.contains("56(1)(a)"));
 }
 
+/// Hindi word order: "मकान 10 मीटर चौड़ी सड़क" is a 10 m road, "9 मीटर ऊँचा" a 9 m height,
+/// and only "सड़क से 1.2 मीटर ऊँचा" is a level difference.
+#[test]
+fn hindi_numbers_by_context() {
+    let n = Numbers::parse("मेरा मकान 10 मीटर चौड़ी सड़क पर है और 9 मीटर ऊँचा होगा।");
+    assert_eq!(n.street_width, Some(10.0));
+    assert_eq!(n.height, Some(9.0));
+    let r = Numbers::parse("मेरा प्लॉट सड़क से 1.2 मीटर ऊँचा है और सड़क 9 मीटर चौड़ी है।");
+    assert_eq!(r.height, None, "a rise above the road is not a height");
+    assert_eq!(r.street_width, Some(9.0));
+}
+
 /// Details filled in after asking replace every assumed input, and change the answer.
 #[tokio::test]
 async fn details_replace_assumptions() {
@@ -44,6 +56,8 @@ async fn details_replace_assumptions() {
         height: Some(9.0),
         use_type: Some("residential".into()),
         building_type: Some("detached".into()),
+        plot_rise: None,
+        components: None,
     };
     let a = t.solve_with(q, Lang::En, &llm, &d).await;
     let s = &a.facts["scene"];

@@ -87,7 +87,8 @@ impl Track1 {
             if nums.is_spatial() || named || mentions(&q, SPATIAL_WORDS) {
                 // The model may add catalog ids the keyword match missed (e.g. "a place to park
                 // my car under the house" -> stilt_parking). It picks from a closed list only.
-                if llm.is_available() {
+                // Not when the user set the list: a component they switched off stays off.
+                if llm.is_available() && details.components.is_none() {
                     if let Some(v) = llm.json(lang, &compose_system(), question).await {
                         let ids: Vec<String> = v["components"]
                             .as_array()
@@ -785,16 +786,21 @@ impl Numbers {
             let before = q[floor_char(q, m.start().saturating_sub(30))..m.start()].to_lowercase();
             let after = q[m.end()..floor_char(q, (m.end() + 24).min(q.len()))].to_lowercase();
             // "1.5 m above the road" is a level difference, not a size (see scene::parse_rise).
-            if ["above", "below", "higher than", "lower than", "sea level", "amsl", "msl", "ऊपर", "नीचे", "ऊँचा", "ऊंचा", "नीचा"]
-                .iter()
-                .any(|k| after.trim_start().starts_with(k))
-            {
+            // Hindi names the reference first — "सड़क से 1.2 मीटर ऊँचा" — so without "से" before the
+            // number, "9 मीटर ऊँचा" is simply the building's height.
+            let next = after.trim_start();
+            let level_en = ["above", "below", "higher than", "lower than", "sea level", "amsl", "msl"].iter().any(|k| next.starts_with(k));
+            let level_hi = ["ऊपर", "नीचे", "ऊँचा", "ऊंचा", "ऊँची", "ऊंची", "नीचा", "नीची"].iter().any(|k| next.starts_with(k))
+                && before.trim_end().ends_with("से");
+            if level_en || level_hi {
                 continue;
             }
+            // A word after the number wins a tie: the thing measured follows it, in Hindi and
+            // English alike ("मकान 10 मीटर चौड़ी सड़क", "house on a 10 m wide street").
             let dist = |keys: &[&str]| {
                 keys.iter()
                     .filter_map(|k| {
-                        let b = before.rfind(k).map(|i| before.len() - i - k.len());
+                        let b = before.rfind(k).map(|i| before.len() - i - k.len() + 1);
                         let a = after.find(k);
                         b.into_iter().chain(a).min()
                     })

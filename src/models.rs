@@ -157,6 +157,10 @@ pub struct Details {
     pub use_type: Option<String>,
     /// "detached" | "semi-detached" | "row"
     pub building_type: Option<String>,
+    /// Plot ground minus road level, in metres (negative: plot below the road).
+    pub plot_rise: Option<f64>,
+    /// Catalog ids to draw. When set, this is the whole list (switched-off ones are left out).
+    pub components: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

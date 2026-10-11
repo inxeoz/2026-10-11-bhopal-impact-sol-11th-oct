@@ -5,7 +5,18 @@ const esc = (s) =>
 const slug = (t) => "tier-" + t.toLowerCase().replace(/[^a-z]+/g, "-").replace(/-+$/, "");
 const num = (v, d = 1) => (v == null ? "—" : Number(v).toFixed(d).replace(/\.0$/, ""));
 
-let state = { track: "bhumi-vikas", lang: "en" };
+let state = { track: "bhumi-vikas", heard: null };
+
+/* The answer speaks the question's language: Hindi when the question is in Devanagari (typed or
+ * spoken), English otherwise. A spoken question keeps the language Sarvam heard while its text is
+ * unedited. Technical parts — rule numbers, quoted rule text, units, the 3D view — stay English. */
+const DEVANAGARI = /[\u0900-\u097F]/;
+function langOf(question) {
+  if (state.heard?.text === question) return state.heard.lang;
+  return DEVANAGARI.test(question) ? "hi" : "en";
+}
+/** Pick the English or Hindi wording. */
+const tr = (lang, en, hi) => (lang === "hi" ? hi : en);
 
 /* ---------- track switching ---------- */
 function setTrack(track) {
@@ -25,13 +36,6 @@ function mountDraw(tries = 0) {
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => setTrack(t.dataset.track)));
 
-$$(".lang-btn").forEach((b) =>
-  b.addEventListener("click", () => {
-    if (!b.dataset.lang) return;
-    state.lang = b.dataset.lang;
-    $$(".lang-btn[data-lang]").forEach((x) => x.classList.toggle("is-on", x === b));
-  })
-);
 
 /* ---------- track 1: ask ---------- */
 $("#ask-form").addEventListener("submit", (e) => {
@@ -74,7 +78,6 @@ async function loadExamples() {
     </div>`;
   const pick = (i) => {
     const e = all[i];
-    setLang(e.lang || "en");
     $("#q").value = e.q;
     ask(e.q);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -106,10 +109,6 @@ async function loadExamples() {
   show(groups[0]);
 }
 
-function setLang(lang) {
-  state.lang = lang;
-  $$(".lang-btn[data-lang]").forEach((x) => x.classList.toggle("is-on", x.dataset.lang === lang));
-}
 
 loadExamples();
 
@@ -128,8 +127,8 @@ $("#reset").addEventListener("click", () => {
 /* ---------- track 1: voice input (Sarvam speech-to-text via /api/transcribe) ----------
  * Click the mic, speak, press Stop. The recording stays in the browser until you press
  * "Send recording" (play it back, delete it or record again first). The words then land in the
- * question box for review — nothing is asked until you press Ask — and EN / हिं follows the
- * language heard.
+ * question box for review — nothing is asked until you press Ask — and the answer comes back in
+ * the language heard.
  * The system default input can be the wrong one (a muted laptop mic while a headset is on), so
  * the bar lists every microphone, remembers the choice, shows a live level, and says so when a
  * recording came through silent. */
@@ -344,8 +343,8 @@ async function sendClip() {
     const { transcript, language_code } = await r.json();
     if (!transcript?.trim())
       return voiceStatus(`Didn't catch any words. Check that “${micName()}” is the mic you are speaking into, then record again.`, true);
-    setLang(language_code?.startsWith("hi") ? "hi" : "en");
     $("#q").value = transcript.trim();
+    state.heard = { text: transcript.trim(), lang: language_code?.startsWith("hi") ? "hi" : "en" };
     discardClip();
     $("#q").focus();
     voiceStatus("Check the question, then press Ask.");
@@ -366,18 +365,21 @@ async function ask(question, details = null) {
   const box = $("#answer");
   voiceStatus("");
   if (!details) state.flow = null; // a new question starts its own steps
-  box.innerHTML = `<p class="spinner" data-testid="answer-loading">${details ? "Working out your plot…" : "Looking through the rulebook…"}</p>`;
+  const lang = langOf(question);
+  box.innerHTML = `<p class="spinner" data-testid="answer-loading">${
+    details ? tr(lang, "Working out your plot…", "आपके प्लॉट का हिसाब लगा रहे हैं…") : tr(lang, "Looking through the rulebook…", "नियम पुस्तिका में देख रहे हैं…")
+  }</p>`;
   try {
     const r = await fetch("/api/ask", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ track: state.track, question, lang: state.lang, ...(details ? { details } : {}) }),
+      body: JSON.stringify({ track: state.track, question, lang, ...(details ? { details } : {}) }),
     });
     if (!r.ok) throw new Error(await r.text());
     const a = await r.json();
     const steps = details ? [] : detailSteps(a.facts?.scene);
-    if (steps.length) startDetails({ question, answer: a, steps, details: {} });
-    else renderAnswer(a, details && { question, steps: state.flow?.steps ?? [], details });
+    if (steps.length) startDetails({ question, lang, answer: a, steps, details: {} });
+    else renderAnswer(a, details && { question, lang, details });
     collapseExamples();
   } catch (err) {
     box.innerHTML = `<div class="card" data-testid="answer-error"><div class="card-head"><p class="verdict" data-testid="answer-error-title">Could not reach the tool.</p>
@@ -391,15 +393,20 @@ async function ask(question, details = null) {
  * server would fill a typical value and label it "Assumed"; instead the missing ones are asked
  * here, one per step, then the question is answered again with them (POST /api/ask `details`). */
 const DETAIL_ORDER = ["use_type", "plot_area", "frontage", "street_width", "height", "floors", "building_type"];
-// Same uses as the 3D view's Use menu (static/scene3d.js).
+// Same uses as the 3D view's Use menu (static/scene3d.js): value, [English, Hindi] label and note.
 const USE_OPTIONS = [
-  ["residential", "Home", "House or flats"],
-  ["business", "Shop / office", "Commercial"],
-  ["educational", "School / college", ""],
-  ["institutional", "Hospital", "Or other institution"],
-  ["assembly", "Hall / cinema", "Gathering place"],
-  ["industrial", "Factory", "Industrial"],
-  ["farm_house", "Farm house", ""],
+  ["residential", ["Home", "घर"], ["House or flats", "मकान या फ़्लैट"]],
+  ["business", ["Shop / office", "दुकान / दफ़्तर"], ["Commercial", "व्यावसायिक"]],
+  ["educational", ["School / college", "स्कूल / कॉलेज"], ["", ""]],
+  ["institutional", ["Hospital", "अस्पताल"], ["Or other institution", "या कोई और संस्था"]],
+  ["assembly", ["Hall / cinema", "हॉल / सिनेमा"], ["Gathering place", "सभा स्थल"]],
+  ["industrial", ["Factory", "फ़ैक्टरी"], ["Industrial", "औद्योगिक"]],
+  ["farm_house", ["Farm house", "फ़ार्म हाउस"], ["", ""]],
+];
+const HOUSE_TYPES = [
+  ["detached", ["Detached", "डिटैच्ड (अलग)"], ["Open on all four sides", "चारों ओर खुला"], ["detached", "डिटैच्ड"]],
+  ["semi-detached", ["Semi-detached", "सेमी-डिटैच्ड"], ["Shares one side wall", "एक तरफ़ की दीवार साझा"], ["semi-detached", "सेमी-डिटैच्ड"]],
+  ["row", ["Row house", "रो हाउस"], ["Shares both side walls", "दोनों तरफ़ की दीवारें साझा"], ["row house", "रो हाउस"]],
 ];
 const SQFT = 10.764; // sq ft per sq m
 const FT = 0.3048; // m per ft
@@ -411,52 +418,62 @@ function detailSteps(scene) {
   return DETAIL_ORDER.filter((f) => missing.has(f));
 }
 
-/** What one step asks, with its quick choices and the free-entry units. */
+/** What one step asks, with its quick choices and the free-entry units. Numbers and units stay
+ * as written ("200 sq m"); the words around them follow the question's language. */
 function stepDef(field, flow) {
-  const d = flow.details, s = flow.answer.facts.scene;
+  const d = flow.details, s = flow.answer.facts.scene, L = flow.lang;
+  const t = (en, hi) => tr(L, en, hi);
   const area = d.plot_area ?? s.plot_area_sqm;
   const len = [["m", 1], ["ft", FT]];
   switch (field) {
     case "use_type":
-      return { key: "use_type", title: "What is the building for?", options: USE_OPTIONS.map(([v, l, sub]) => ({ v, l, sub })) };
+      return { key: "use_type", title: t("What is the building for?", "इमारत किस काम के लिए है?"), options: USE_OPTIONS.map(([v, l, sub]) => ({ v, l: t(...l), sub: t(...sub) })) };
     case "plot_area":
       return {
-        key: "plot_area", title: "How big is the plot?", hint: "The whole plot, not the built area.",
+        key: "plot_area", title: t("How big is the plot?", "प्लॉट कितना बड़ा है?"), hint: t("The whole plot, not the built area.", "पूरा प्लॉट, सिर्फ़ बना हुआ हिस्सा नहीं।"),
         options: [100, 150, 200, 300, 500].map((v) => ({ v, l: `${v} sq m`, sub: `≈ ${Math.round(v * SQFT).toLocaleString("en-IN")} sq ft` })),
         units: [["sq m", 1], ["sq ft", 1 / SQFT]],
       };
     case "frontage": {
       const fs = [...new Set([1, 1.5, 2].map((r) => half(Math.sqrt(area / r))))];
       return {
-        key: "frontage", title: "How wide is the plot along the road?", hint: `For a ${fmtNum(area)} sq m plot.`,
-        options: fs.map((v) => ({ v, l: `${v} m wide`, sub: `${fmtNum(area / v)} m deep` })),
+        key: "frontage", title: t("How wide is the plot along the road?", "सड़क की तरफ़ प्लॉट कितना चौड़ा है?"),
+        hint: t(`For a ${fmtNum(area)} sq m plot.`, `${fmtNum(area)} sq m के प्लॉट के लिए।`),
+        options: fs.map((v) => ({ v, l: t(`${v} m wide`, `${v} m चौड़ा`), sub: t(`${fmtNum(area / v)} m deep`, `${fmtNum(area / v)} m गहरा`) })),
         units: len,
       };
     }
     case "street_width":
       return {
-        key: "street_width", title: "How wide is the road in front?", hint: "Edge to edge, as on the plot's papers.",
+        key: "street_width", title: t("How wide is the road in front?", "सामने की सड़क कितनी चौड़ी है?"),
+        hint: t("Edge to edge, as on the plot's papers.", "एक किनारे से दूसरे किनारे तक, जैसा प्लॉट के काग़ज़ों में है।"),
         options: [4.5, 6, 7.5, 9, 12, 18, 24].map((v) => ({ v, l: `${v} m`, sub: `≈ ${Math.round(v / FT)} ft` })),
         units: len,
       };
     case "height":
       return {
-        key: "height", title: "How tall will the building be?", hint: "Up to the roof. The choices use 3 m per floor.",
-        options: [1, 2, 3, 4, 5].map((n) => ({ v: n * 3, l: n === 1 ? "Ground floor only" : `G+${n - 1}`, sub: `${n} floor${n > 1 ? "s" : ""} · ${n * 3} m` })),
+        key: "height", title: t("How tall will the building be?", "इमारत कितनी ऊँची होगी?"),
+        hint: t("Up to the roof. The choices use 3 m per floor.", "छत तक। विकल्पों में हर मंज़िल 3 m की है।"),
+        options: [1, 2, 3, 4, 5].map((n) => ({
+          v: n * 3,
+          l: n === 1 ? t("Ground floor only", "सिर्फ़ भूतल") : `G+${n - 1}`,
+          sub: t(`${n} floor${n > 1 ? "s" : ""}`, `${n} मंज़िल`) + ` · ${n * 3} m`,
+        })),
         units: len,
       };
     case "floors": {
       const n = s.floors;
       return {
-        key: "height", title: `How tall is each of the ${n} floors?`, hint: "Floor to floor, including the slab.",
-        options: [3, 3.2, 3.5].map((v) => ({ v: Math.round(n * v * 100) / 100, l: `${v} m each`, sub: `${fmtNum(n * v)} m in all` })),
-        units: [["m per floor", n], ["ft per floor", n * FT]],
+        key: "height", title: t(`How tall is each of the ${n} floors?`, `${n} मंज़िलों में हर मंज़िल कितनी ऊँची है?`),
+        hint: t("Floor to floor, including the slab.", "फ़र्श से फ़र्श तक, स्लैब समेत।"),
+        options: [3, 3.2, 3.5].map((v) => ({ v: Math.round(n * v * 100) / 100, l: t(`${v} m each`, `हर एक ${v} m`), sub: t(`${fmtNum(n * v)} m in all`, `कुल ${fmtNum(n * v)} m`) })),
+        units: [[t("m per floor", "m प्रति मंज़िल"), n], [t("ft per floor", "ft प्रति मंज़िल"), n * FT]],
       };
     }
     case "building_type":
       return {
-        key: "building_type", title: "How does the house sit on the plot?",
-        options: [["detached", "Detached", "Open on all four sides"], ["semi-detached", "Semi-detached", "Shares one side wall"], ["row", "Row house", "Shares both side walls"]].map(([v, l, sub]) => ({ v, l, sub })),
+        key: "building_type", title: t("How does the house sit on the plot?", "मकान प्लॉट पर कैसे बना है?"),
+        options: HOUSE_TYPES.map(([v, l, sub]) => ({ v, l: t(...l), sub: t(...sub) })),
       };
   }
 }
@@ -480,11 +497,12 @@ function renderStep() {
   const field = steps[flow.i];
   const st = stepDef(field, flow);
   const cur = flow.details[st.key];
+  const L = flow.lang;
   const t = `ask-details-${field.replace(/_/g, "-")}`;
   $("#answer").innerHTML = `
-    <article class="card details" data-testid="ask-details">
+    <article class="card details" data-testid="ask-details" lang="${L}">
       <div class="card-head">
-        <p class="details-top"><span>A few details about your plot</span><span data-testid="ask-details-progress">Step ${flow.i + 1} of ${steps.length}</span></p>
+        <p class="details-top"><span>${tr(L, "A few details about your plot", "आपके प्लॉट के बारे में कुछ जानकारी")}</span><span data-testid="ask-details-progress">${tr(L, `Step ${flow.i + 1} of ${steps.length}`, `चरण ${flow.i + 1} / ${steps.length}`)}</span></p>
         <div class="details-bar" aria-hidden="true"><i style="--p:${(flow.i / steps.length).toFixed(3)}"></i></div>
         <h2 class="details-q" data-testid="${t}-question">${esc(st.title)}</h2>
         ${st.hint ? `<p class="detail" data-testid="${t}-hint">${esc(st.hint)}</p>` : ""}
@@ -496,14 +514,14 @@ function renderStep() {
           .join("")}
       </div>
       ${st.units ? `<form class="details-other" data-testid="${t}-other">
-          <label for="details-num">Other</label>
-          <input id="details-num" type="number" inputmode="decimal" min="0" step="any" data-testid="${t}-input" placeholder="Type a number">
+          <label for="details-num">${tr(L, "Other", "अन्य")}</label>
+          <input id="details-num" type="number" inputmode="decimal" min="0" step="any" data-testid="${t}-input" placeholder="${tr(L, "Type a number", "संख्या लिखें")}">
           <select aria-label="Unit" data-testid="${t}-unit">${st.units.map(([u], k) => `<option value="${k}">${u}</option>`).join("")}</select>
-          <button type="submit" class="primary" data-testid="${t}-next">Next</button>
+          <button type="submit" class="primary" data-testid="${t}-next">${tr(L, "Next", "आगे")}</button>
         </form>` : ""}
       <div class="details-foot">
-        ${flow.i ? '<button type="button" class="clip-link" data-back data-testid="ask-details-back">← Back</button>' : "<span></span>"}
-        <button type="button" class="clip-link" data-skip data-testid="ask-details-skip" title="Answer now with typical values, shown as assumed">Skip, use typical values</button>
+        ${flow.i ? `<button type="button" class="clip-link" data-back data-testid="ask-details-back">← ${tr(L, "Back", "पीछे")}</button>` : "<span></span>"}
+        <button type="button" class="clip-link" data-skip data-testid="ask-details-skip" title="${tr(L, "Answer now with typical values, shown as assumed", "अभी जवाब दें, सामान्य मान मानकर")}">${tr(L, "Skip, use typical values", "छोड़ें, सामान्य मान लें")}</button>
       </div>
     </article>`;
   const box = $("#answer");
@@ -528,11 +546,13 @@ function renderStep() {
 }
 
 /** "Your plot: 200 sq m · 10 m wide …" under an answer built from filled-in details. */
-function detailsSummary(d) {
+function detailsSummary(d, L) {
+  const t = (en, hi) => tr(L, en, hi);
   const use = USE_OPTIONS.find(([v]) => v === d.use_type)?.[1];
-  const type = { detached: "detached", "semi-detached": "semi-detached", row: "row house" }[d.building_type];
-  return [use, d.plot_area && `${fmtNum(d.plot_area)} sq m`, d.frontage && `${fmtNum(d.frontage)} m wide`,
-    d.street_width && `${fmtNum(d.street_width)} m road`, d.height && `${fmtNum(d.height)} m tall`, type].filter(Boolean).join(" · ");
+  const type = HOUSE_TYPES.find(([v]) => v === d.building_type)?.[3];
+  return [use && t(...use), d.plot_area && `${fmtNum(d.plot_area)} sq m`, d.frontage && t(`${fmtNum(d.frontage)} m wide`, `${fmtNum(d.frontage)} m चौड़ा`),
+    d.street_width && t(`${fmtNum(d.street_width)} m road`, `${fmtNum(d.street_width)} m सड़क`), d.height && t(`${fmtNum(d.height)} m tall`, `${fmtNum(d.height)} m ऊँचा`), type && t(...type)]
+    .filter(Boolean).join(" · ");
 }
 
 function collapseExamples() {
@@ -554,35 +574,43 @@ function renderAnswer(a, given = null) {
     })
     .join("");
   const scene = a.facts && a.facts.scene;
+  const L = a.lang === "hi" ? "hi" : "en";
+  // Order: the answer, the rules it applied, then the plot to adjust (changes wait for "Apply changes").
+  const rules = cites || a.note
+    ? `<section class="rules" data-testid="answer-rules">
+        ${cites ? `<h3 class="s3-title" data-testid="answer-rules-title">${tr(L, "Rules applied", "लागू नियम")}</h3>${cites}` : ""}
+        ${a.note ? `<p class="note" data-testid="answer-note">${esc(a.note)}</p>` : ""}
+      </section>`
+    : "";
   const diagram = scene
     ? `<div class="scene3d" data-testid="answer-3d"><h3 class="s3-title" data-testid="answer-3d-title">Your plot in 3D</h3><div class="s3-body" data-testid="answer-3d-body"></div></div>`
     : setbackSVG(a.facts || {});
   $("#answer").innerHTML = `
     <article class="card ${a.abstained ? "abstained" : "answered"}" data-testid="answer-card">
-      <div class="card-head" data-testid="answer-head">
-        ${a.abstained ? '<div class="tag" data-testid="answer-out-of-scope">Out of scope</div>' : ""}
+      <div class="card-head" data-testid="answer-head" lang="${L}">
+        ${a.abstained ? `<div class="tag" data-testid="answer-out-of-scope">${tr(a.lang, "Out of scope", "दायरे से बाहर")}</div>` : ""}
         <p class="verdict" data-testid="answer-verdict">${esc(a.answer)}</p>
         <p class="detail" data-testid="answer-detail">${esc(a.detail)}</p>
-        ${given ? `<p class="details-summary" data-testid="answer-plot-details">Your plot: ${esc(detailsSummary(given.details))}
-          <button type="button" class="clip-link" data-testid="answer-plot-details-change">Change</button></p>` : ""}
+        ${given ? `<p class="details-summary" data-testid="answer-plot-details">${tr(L, "Your plot:", "आपका प्लॉट:")} ${esc(detailsSummary(given.details, L))}
+          ${state.flow?.steps?.length ? `<button type="button" class="clip-link" data-testid="answer-plot-details-change">${tr(L, "Change", "बदलें")}</button>` : ""}</p>` : ""}
       </div>
+      ${rules}
       ${diagram}
-      ${a.note ? `<p class="note" data-testid="answer-note">${esc(a.note)}</p>` : ""}
-      ${cites}
     </article>`;
-  if (scene) mount3D($("#answer .s3-body"), scene);
+  // Apply changes: answer the same question again with the plot as now set.
+  if (scene) mount3D($("#answer .s3-body"), scene, { onApply: (details) => ask(a.question, details) });
   // Change: run the same steps again, starting from the answers already given.
   $('[data-testid="answer-plot-details-change"]')?.addEventListener("click", () => {
-    state.flow = { ...state.flow, question: given.question, details: { ...given.details }, i: 0 };
+    state.flow = { ...state.flow, question: given.question, lang: given.lang, details: { ...given.details }, i: 0 };
     renderStep();
   });
 }
 
 /* ---------- track 1: 3D plot (static/scene3d.js) ---------- */
-function mount3D(el, scene, tries = 0) {
+function mount3D(el, scene, opts, tries = 0) {
   // The module script loads deferred; wait briefly if it has not run yet.
-  if (window.mountScene) return window.mountScene(el, scene);
-  if (tries < 40) return setTimeout(() => mount3D(el, scene, tries + 1), 50);
+  if (window.mountScene) return window.mountScene(el, scene, opts);
+  if (tries < 40) return setTimeout(() => mount3D(el, scene, opts, tries + 1), 50);
   el.innerHTML = setbackSVG(scene.front ? { front_open_space_m: scene.front.m, street_width_m: scene.street_width_m } : {});
 }
 

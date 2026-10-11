@@ -13,6 +13,15 @@ function setTrack(track) {
   $$(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.track === track));
   $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + track));
   if (track === "visarjan" && !state.ghatsLoaded) loadGhats();
+  $("main").classList.toggle("is-wide", track === "draw");
+  if (track === "draw") mountDraw();
+  history.replaceState(null, "", track === "bhumi-vikas" ? location.pathname : "#" + track);
+}
+
+/* Draw plot lives in static/draw.js (a module, loaded after this script). */
+function mountDraw(tries = 0) {
+  if (window.drawPlot) return window.drawPlot.mount();
+  if (tries < 60) setTimeout(() => mountDraw(tries + 1), 50);
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => setTrack(t.dataset.track)));
 
@@ -322,4 +331,4 @@ function svgDO(series) {
   </svg>`;
 }
 
-setTrack(location.hash === "#visarjan" ? "visarjan" : "bhumi-vikas");
+setTrack({ "#visarjan": "visarjan", "#draw": "draw" }[location.hash] ?? "bhumi-vikas");

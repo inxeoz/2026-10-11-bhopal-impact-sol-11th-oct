@@ -451,5 +451,33 @@
         "basement"
       ]
     }
+  },
+  {
+    "group": "Levels",
+    "title": "Plot 1.2 m above the road",
+    "q": "My 200 sq m plot is 1.2 m above a 9 m road. 9 m tall house with a boundary wall and staircase. What front open space?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "3.0 m",
+      "front": 3,
+      "permitted": true,
+      "components": [
+        "boundary_wall",
+        "staircase"
+      ],
+      "note_has": "1.2 m above the road"
+    }
+  },
+  {
+    "group": "Levels",
+    "title": "Plot sunk below the road",
+    "q": "My 150 sq m plot is 1.5 m below the road, which is 9 m wide. I want a 2 floor house. What front open space?",
+    "lang": "en",
+    "expect": {
+      "answer_has": "3.0 m",
+      "front": 3,
+      "permitted": true,
+      "note_has": "below the road"
+    }
   }
 ]

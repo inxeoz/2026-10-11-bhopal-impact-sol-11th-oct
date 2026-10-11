@@ -47,6 +47,9 @@ const DEFS: &[Def] = &[
     // Rule 2 — definitions
     ("far.balcony_free", "2", "(30)", r"balcony \(upto a width of ([\d.]+) mtrs\.\)", 1),
     ("garage.free_sqm", "2", "(20)", r"private garage not exceeding (\d+) sq\. meters", 1),
+    // Rule 16(4)(j) — contours on sloping sites
+    ("slope.contour", "16", "(4)(j)", r"contours at an interval of ([\d.]+) meters in case of the site which has a slope more than 1:(\d+)", 1),
+    ("slope.ratio", "16", "(4)(j)", r"contours at an interval of ([\d.]+) meters in case of the site which has a slope more than 1:(\d+)", 2),
     // Rule 53(1) — plot size and frontage by building type
     ("plot.det.area", "53", "(1)(i)", r"Detached building above (\d+) above (\d+)", 1),
     ("plot.det.front", "53", "(1)(i)", r"Detached building above (\d+) above (\d+)", 2),
@@ -145,6 +148,15 @@ const DEFS: &[Def] = &[
     ("lift.above", "83", "", r"lifts shall be made for building more than ([\d.]+) meters in height", 1),
 ];
 
+/// Rule text with no number to read, quoted as the source of a check (value is 0).
+const QUOTES: &[(&str, &str, &str, &str)] = &[
+    ("ref.level", "2", "(34)", r#""ground level" means ground or reference level which would be at the centre point of frontage of the plot or land from which the access is being taken\. If the site is sloping, the reference level will be taken at the centre line of the existing or proposed approach road or street in front of the plot or land from which the access is being taken or the average level of the plot, whichever is higher"#),
+    ("height.def", "2", "(9)", r#""building height or height of a building" means the vertical length of the building which shall be measured from a ground or reference level"#),
+    ("below.ref.far", "76", "(6)", r"If the built form below the ground or reference level is used as habitable accommodation because of the existing topography such area may be permitted as habitable area and shall be counted in the Floor Area Ratio"),
+    ("plinth.drainage", "68", "(1)", r"The plinth or any part of a building or out house shall be so located with respect to surrounding ground level that adequate drainage of the site is assured"),
+    ("wall.measure", "78", "(b)", r"It shall be measured above the central line of the front street"),
+];
+
 /// Rule 42 Table 4 / Table 5 row, read from the text.
 #[derive(Clone, Debug, Serialize)]
 pub struct HeightRow {
@@ -200,6 +212,19 @@ impl Facts {
                     page: page_at(t, m.start(), starts[rule]),
                     quote: m.as_str().to_string(),
                 })
+            });
+            match hit {
+                Some(f) => {
+                    map.insert(id, f);
+                }
+                None => missing.push(id),
+            }
+        }
+
+        for &(id, rule, clause, pat) in QUOTES {
+            let hit = texts.get(rule).and_then(|t| {
+                let m = Regex::new(&format!("(?i){pat}")).ok()?.find(t)?;
+                Some(Fact { value: 0.0, rule, clause, page: page_at(t, m.start(), starts[rule]), quote: m.as_str().to_string() })
             });
             match hit {
                 Some(f) => {

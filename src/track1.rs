@@ -764,6 +764,13 @@ impl Numbers {
             let m = c.get(0).unwrap();
             let before = q[floor_char(q, m.start().saturating_sub(30))..m.start()].to_lowercase();
             let after = q[m.end()..floor_char(q, (m.end() + 24).min(q.len()))].to_lowercase();
+            // "1.5 m above the road" is a level difference, not a size (see scene::parse_rise).
+            if ["above", "below", "higher than", "lower than", "sea level", "amsl", "msl", "ऊपर", "नीचे", "ऊँचा", "ऊंचा", "नीचा"]
+                .iter()
+                .any(|k| after.trim_start().starts_with(k))
+            {
+                continue;
+            }
             let dist = |keys: &[&str]| {
                 keys.iter()
                     .filter_map(|k| {

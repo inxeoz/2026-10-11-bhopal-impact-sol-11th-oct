@@ -103,6 +103,23 @@ The ground-coverage column and Note 1 were deleted on 06-03-2025.
 centre → convenience shopping; the lowest is used and noted) · public / semi-public 1.00 ·
 industrial per Rule 48.
 
+## Levels (elevation)
+
+Both the Ask scene (plot above or below the road) and Draw plot (road level plus a level for
+every plot corner, so a site can slope) use these rules:
+
+| Rule (page) | What it says | What the tool does |
+|---|---|---|
+| 2(9), 2(34) (4, 8) | Height is measured from the ground or reference level: the centre of the frontage; on a **sloping** site, the road centre line or the average plot level, **whichever is higher** | Draw plot fits a ground plane through the corner levels, picks the reference level, and measures each building from it (plinth included, stilt excluded). This rule height chooses Rule 56 or 42 and decides whether a lift is needed |
+| 68(1) (87) | Plinth more than 45 cm above the surrounding ground, placed so the site drains | Plinth ≤ 0.45 m is an error. A floor below the road centre line gets a drainage note |
+| 76(2)(b), 76(6) (90–91) | With a basement, plinth at most 0.45 m; habitable space below the reference level counts in FAR | Basement plinth > 0.45 m is an error. A floor below the reference level gets a note |
+| 78 (92) | Walls measured **above the centre line of the front street**: front ≤ 1.5 m, others ≤ 2 m | Wall height above the plot = limit − (ground − road level), edge by edge. A raised plot gets a lower wall |
+| 16(4)(j) (28) | Sites steeper than 1:20 need contours every 0.3 m on the site plan | The slope of the fitted plane is reported, and contours are drawn on the plan |
+
+Plan, 3D and section views show the road level, the ground, the plinth, the floors, the reference
+line and the height that counts for the rules. A plot whose corners are within 0.05 m of each
+other is treated as level (stated in `src/layout.rs`).
+
 ## Catalogued, not drawn
 
 Each of these is in `catalog.rs`. When a question mentions one, the 3D panel lists it with

@@ -43,6 +43,7 @@ async fn main() {
         .route("/api/ghats", get(ghats_handler))
         .route("/api/scene", get(scene_handler))
         .route("/api/catalog", get(catalog_handler))
+        .route("/api/check", post(check_handler))
         .route("/api/health", get(|| async { "ok" }))
         .fallback_service(ServeDir::new("static"))
         .with_state(app);
@@ -83,6 +84,14 @@ fn port_from_args() -> u16 {
 
 async fn ghats_handler(State(app): State<Arc<App>>) -> Json<GhatsResponse> {
     Json(app.ghats.clone())
+}
+
+/// Draw plot: check a hand-drawn layout against the rules.
+async fn check_handler(
+    State(app): State<Arc<App>>,
+    Json(layout): Json<bhopal_sahayak::layout::Layout>,
+) -> Json<bhopal_sahayak::layout::Check> {
+    Json(app.track1.check_layout(&layout))
 }
 
 /// The component palette: every catalog entry, drawn or not, plus any fact that failed to read.

@@ -73,6 +73,7 @@ class PlotView {
           <button type="button" data-view="top">Top</button>
           <button type="button" data-view="street">Street</button>
           <button type="button" data-xray class="${this.xray ? "is-on" : ""}" title="See inside the building">X-ray</button>
+          <button type="button" data-edit title="Open this scene in Draw plot to move things around">Edit in Draw plot</button>
         </div>
         <div class="s3-status"></div>
         <p class="s3-hint">Drag to orbit · scroll to zoom · right-drag to pan · click anything for its rule</p>
@@ -144,6 +145,13 @@ class PlotView {
         this.frame(b.dataset.view);
       })
     );
+    this.$("[data-edit]").addEventListener("click", () => {
+      // Show the tab first so the editor can size itself, then load the layout.
+      document.querySelector('.tab[data-track="draw"]')?.click();
+      const layout = sceneToLayout(this.scene);
+      const go = (n = 0) => (window.drawPlot ? window.drawPlot.open(layout) : n < 60 && setTimeout(() => go(n + 1), 50));
+      setTimeout(go, 0);
+    });
     this.$("[data-xray]").addEventListener("click", (e) => {
       this.xray = !this.xray;
       e.currentTarget.classList.toggle("is-on", this.xray);
@@ -211,19 +219,37 @@ class PlotView {
     this.ground.material.opacity = below ? 0.55 : 1;
     this.ground.material.depthWrite = !below;
 
+    // Levels: the plot stays at y = 0; the road (and the land around) sits rise metres lower.
+    const rise = s.plot_rise_m || 0;
+    this.ground.position.y = rise > 0 ? -rise : 0;
+    if (rise > 0.01) {
+      // Raised plot on an earth bank.
+      const bank = box(W, rise, D, 0xb9a27f);
+      bank.position.set(0, -rise / 2, 0);
+      g.add(bank);
+    } else if (rise < -0.01) {
+      // Road on an embankment above the plot, with a retaining face at the boundary.
+      const len = Math.max(W * 3, 60);
+      const emb = box(len, -rise, s.street_width_m + 2, 0xb9a27f);
+      emb.position.set(0, -rise / 2, D / 2 + s.street_width_m / 2 + 1);
+      g.add(emb);
+    }
+    if (Math.abs(rise) > 0.01)
+      g.add(label(`plot ${rise > 0 ? "+" : "−"}${fmt(Math.abs(rise))} m ${rise > 0 ? "above" : "below"} road`, { x: W / 2 + 3, y: Math.max(0, -rise) + 0.8, z: D / 2, size: 0.85, ink: "#6b4a00", bg: "rgba(255,255,255,.9)" }));
+
     // Street along the front edge.
     const streetW = s.street_width_m;
     const streetLen = Math.max(W * 3, 60);
     const street = box(streetLen, 0.04, streetW, C.street, { roughness: 0.95 });
-    street.position.set(0, 0.02, D / 2 + streetW / 2);
+    street.position.set(0, 0.02 - rise, D / 2 + streetW / 2);
     street.receiveShadow = true;
     g.add(street);
     for (let x = -streetLen / 2 + 1.5; x < streetLen / 2; x += 4) {
       const dash = box(2, 0.01, 0.15, C.streetLine);
-      dash.position.set(x + 1, 0.05, D / 2 + streetW / 2);
+      dash.position.set(x + 1, 0.05 - rise, D / 2 + streetW / 2);
       g.add(dash);
     }
-    g.add(label(`${fmt(streetW)} m wide street`, { x: -W / 2 - 4, y: 0.6, z: D / 2 + streetW / 2, size: 1.0, ink: "#ffffff", bg: "rgba(31,58,95,.85)" }));
+    g.add(label(`${fmt(streetW)} m wide street`, { x: -W / 2 - 4, y: 0.6 - rise, z: D / 2 + streetW / 2, size: 1.0, ink: "#ffffff", bg: "rgba(31,58,95,.85)" }));
 
     // Plot slab and boundary.
     const plot = box(W, 0.1, D, C.plot);
@@ -497,6 +523,7 @@ class PlotView {
       ${slider("frontage", "Frontage", 4, 80, 0.5, s.frontage_m, "m")}
       ${slider("street_width", "Street width", 3, 80, 0.5, s.street_width_m, "m")}
       ${slider("height", "Height", 3, 100, 0.5, s.height_m, "m")}
+      ${slider("plot_rise", "Plot vs road", -3, 3, 0.1, s.plot_rise_m || 0, "m")}
       <div class="s3-row" ${s.use_type === "residential" ? "" : "hidden"}><span class="s3-lbl">Type</span>
         <div class="s3-seg">${kinds
           .map(([k, t]) => `<button type="button" data-kind="${k}" class="${s.building_type === k ? "is-on" : ""}">${t}</button>`)
@@ -603,6 +630,87 @@ class PlotView {
 
 /* ---------- helpers ---------- */
 
+/** The composed scene as a Draw-plot layout: same plot, building and components, ready to move. */
+function sceneToLayout(s) {
+  const W = s.frontage_m, D = s.depth_m;
+  const front = s.front?.m ?? 0, rear = s.rear?.m ?? 0, left = s.side_left?.m ?? 0, right = s.side_right?.m ?? 0;
+  const fw = s.footprint_w_m, fd = s.footprint_d_m;
+  const bx = left + (W - left - right) / 2, by = rear + (D - front - rear) / 2;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const items = [];
+  const add = (kind, name, o) => items.push({ id: `${kind}-${items.length + 1}`, kind, name, ...o });
+  const has = (id) => s.components.find((c) => c.id === id);
+  add("building", "Building 1", { x: r2(bx), y: r2(by), w: fw, d: fd, floors: s.floors, stilt: !!has("stilt_parking") });
+  let wall = null;
+  for (const c of s.components) {
+    const p = c.params;
+    switch (c.id) {
+      case "balcony":
+        if (p.depth > 0) add("balcony", "Balcony", { x: r2(bx), y: r2(by + fd / 2 + p.depth / 2), w: r2(fw * p.width_frac), d: p.depth });
+        break;
+      case "garage":
+        add("garage", "Garage", { x: r2(p.side === "left" ? p.w / 2 + 0.05 : W - p.w / 2 - 0.05), y: r2(rear + p.l / 2), w: p.w, d: p.l });
+        break;
+      case "staircase":
+        add("staircase", "Staircase", { x: r2(bx - fw / 2 + p.core_w / 2 + 0.15), y: r2(by - fd / 2 + p.core_d / 2 + 0.15), w: p.core_w, d: p.core_d, width: p.width });
+        break;
+      case "lift": {
+        const sw = has("staircase")?.params.core_w ?? 0;
+        add("lift", "Lift", { x: r2(bx - fw / 2 + 0.15 + sw + 0.2 + p.shaft_w / 2), y: r2(by - fd / 2 + 0.15 + p.shaft_d / 2), w: p.shaft_w, d: p.shaft_d });
+        break;
+      }
+      case "ventilation_shaft":
+        add("shaft", "Shaft", { x: r2(bx + fw / 2 - p.a / 2 - 0.4), y: r2(by), w: p.a, d: p.b });
+        break;
+      case "courtyard":
+        add("courtyard", "Courtyard", { x: r2(bx), y: r2(by), w: p.side, d: p.side });
+        break;
+      case "septic_tank": {
+        const z = { rear: [bx, by - fd / 2 - p.gap - p.w / 2, p.len, p.w], front: [bx, by + fd / 2 + p.gap + p.w / 2, p.len, p.w],
+          left: [bx - fw / 2 - p.gap - p.w / 2, by, p.w, p.len], right: [bx + fw / 2 + p.gap + p.w / 2, by, p.w, p.len] }[p.zone];
+        add("septic_tank", "Septic tank", { x: r2(z[0]), y: r2(z[1]), w: z[2], d: z[3] });
+        break;
+      }
+      case "trees": {
+        const spots = [];
+        for (let x = 0.9; x <= W - 0.9; x += 2.6)
+          for (let y = 0.9; y <= D - 0.9; y += 2.6)
+            if (!(Math.abs(x - bx) < fw / 2 + 1.2 && Math.abs(y - by) < fd / 2 + 1.2)) spots.push([x, y]);
+        const n = Math.min(40, p.count, spots.length);
+        for (let i = 0; i < n; i++) {
+          const [x, y] = spots[Math.floor((i * spots.length) / n)];
+          add("tree", `Tree ${i + 1}`, { x: r2(x), y: r2(y), w: 1.4, d: 1.4 });
+        }
+        break;
+      }
+      case "rainwater_harvesting":
+        add("rwh_pit", "Rainwater pit", { x: r2(Math.max(0.9, left / 2)), y: r2(D - Math.max(0.9, front / 2)), w: 1.2, d: 1.2 });
+        break;
+      case "electric_line":
+        add("electric_line", "Power line", { a: [-5, r2(D + 0.5)], b: [r2(W + 5), r2(D + 0.5)], voltage: p.class });
+        break;
+      case "water_body":
+        add("water_body", p.kind === "river" ? "River" : "Lake", { x: r2(W / 2), y: -12, w: r2(W * 2.5), d: 24, water: p.kind });
+        break;
+      case "boundary_wall":
+        wall = { front_h: p.front_h, other_h: p.other_h };
+        add("gate", "Gate", { x: r2(W / 2), y: r2(D - 0.15), w: p.gate_w, d: 0.3 });
+        break;
+    }
+  }
+  return {
+    plot: [[0, 0], [W, 0], [W, D], [0, D]],
+    road_edges: [2],
+    street_width: s.street_width_m,
+    road_level: 500,
+    plot_levels: [0, 0, 0, 0].map(() => Math.round((500 + (s.plot_rise_m || 0)) * 100) / 100),
+    use_type: s.use_type,
+    building_type: s.building_type,
+    wall,
+    items,
+  };
+}
+
 /** Inputs the question actually gave; assumed ones stay unset so the server keeps deriving them. */
 function initialInput(s) {
   const assumed = new Set(s.assumed.map((a) => a.field));
@@ -612,6 +720,7 @@ function initialInput(s) {
   if (!assumed.has("street_width")) input.street_width = s.street_width_m;
   if (!assumed.has("building_type")) input.building_type = s.building_type;
   if (!assumed.has("use_type")) input.use_type = s.use_type;
+  if (s.plot_rise_m) input.plot_rise = s.plot_rise_m;
   // A floor count stays a floor count, so its height keeps showing as assumed.
   if (assumed.has("floors")) input.floors = Math.round(s.height_m / 3);
   else if (!assumed.has("height")) input.height = s.height_m;

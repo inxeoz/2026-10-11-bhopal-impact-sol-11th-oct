@@ -1,6 +1,7 @@
 pub mod catalog;
 pub mod corpus;
 pub mod facts;
+pub mod layout;
 pub mod llm;
 pub mod models;
 pub mod scene;

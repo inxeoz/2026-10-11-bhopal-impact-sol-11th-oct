@@ -76,6 +76,29 @@ translated — it is always shown verbatim in the citation block.
   text by pattern (`src/facts.rs`, checked by tests). Where a rule sets no size, the inspector says
   "drawn, not ruled". Components that break a rule are drawn in red with the reason. The model, if
   present, only picks catalog ids; it never supplies a dimension.
+- **Draw plot (new tab):** draw the plot as it really is (any outline, road on any side, corner
+  plots with two roads), then place and move blocks: buildings with floors and stilt parking,
+  balcony, garage, staircase, lift, shaft, courtyard, septic tank, parking bay, trees, rainwater
+  pit, gate, boundary wall, lake/river and power line. Each change is checked live (or on
+  demand with *Check now*) by `POST /api/check` (`src/layout.rs`):
+  - Every plot edge is classed front (road), rear or side, and its required open-space line is
+    drawn, with the buildable area shaded.
+  - Each block is measured against the edges and against the other blocks: balcony depth and
+    boundary gap, garage size and position, septic distance, line clearance, lake buffer, stair
+    width, shaft and courtyard sizes.
+  - FAR, ground coverage, lift above 12.5 m, trees, rainwater harvesting, wall heights and the
+    gate width are checked.
+  - Every problem names the block (drawn red in 2D and 3D) and quotes the rule.
+
+  **Levels:** set the road level and the ground level at each plot corner (a sloping site). The
+  checker finds the reference level from Rule 2(34): the frontage centre, or on a slope the higher
+  of the road centre line and the average plot level. Each building is measured from there,
+  plinth included, which can move it into Rule 42 or require a lift. The plinth is checked
+  (68(1), 76(2)(b)), walls are measured above the street centre line (78), and contours are
+  required above 1:20 (16(4)(j)). A section view draws the road, the ground, the plinth, the
+  floors and the height that counts. Ask questions understand "plot is 1.5 m above the road".
+  Undo/redo, snap, import/export JSON and autosave are included. **Edit in Draw plot** on any
+  3D answer opens that scene in the editor.
 - **Track 1, example gallery:** 25 complex scenarios in [`static/examples.json`](static/examples.json),
   grouped as Homes, Tall buildings, Other uses, Surroundings and Hindi. Examples include a row
   house that wants stilt parking on a plot too small for it, a 24 m building on a road too narrow
@@ -121,13 +144,15 @@ src/track1.rs    rules: retrieval + deterministic table parsers
 src/catalog.rs   3D component catalog (ids, rules, EN/HI trigger words)
 src/facts.rs     every 3D number, read from the rule text by pattern
 src/scene.rs     composes a question into a 3D scene (open spaces, FAR, components)
+src/layout.rs    Draw plot: checks a hand-drawn layout (any plot shape) against the rules
 src/track2.rs    ghats: CPCB classification + ranking
 src/corpus.rs    BM25 over the rule texts
 src/models.rs    Answer / Source / Evidence types
 src/main.rs      axum routes + JSON API
-static/          hand-written HTML/CSS/JS UI (scene3d.js = 3D view, components3d.js = drawers)
+static/          hand-written HTML/CSS/JS UI (scene3d.js = 3D view, components3d.js = drawers,
+                 draw.js = Draw plot editor)
 docs/            3d-catalog.md — every spatial value in the rules and what is drawn
-tests/           sample-question assertions + every example in static/examples.json
+tests/           sample-question assertions, every example in static/examples.json, drawn layouts
 ```
 
 ## License

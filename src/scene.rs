@@ -45,6 +45,8 @@ pub struct SceneInput {
     pub voltage: Option<String>,
     /// "lake" | "river" for Rule 50(b).
     pub water: Option<String>,
+    /// Plot ground level minus road centre-line level, in metres (negative: plot below road).
+    pub plot_rise: Option<f64>,
 }
 
 impl SceneInput {
@@ -79,6 +81,7 @@ impl SceneInput {
             components: Some(components.join(",")),
             voltage: voltage.map(str::to_string),
             water: water.map(str::to_string),
+            plot_rise: parse_rise(question),
         }
     }
 
@@ -193,6 +196,8 @@ pub struct Scene {
     pub floor_h_m: f64,
     pub building_type: String,
     pub use_type: String,
+    /// Plot ground minus road centre line (m). The 3D view drops or raises the road by this.
+    pub plot_rise_m: f64,
     /// Which rule set the open spaces come from, in words.
     pub envelope: String,
     /// Inputs that were not in the question and were defaulted.
@@ -210,6 +215,8 @@ pub struct Scene {
     pub plinth_m: f64,
     pub roof: &'static str,
     pub far: Option<FarCheck>,
+    /// Ground-coverage cap in % (Rule 42 Table 5 high rises), if any.
+    pub coverage_cap_pct: Option<f64>,
     /// False when the open spaces could not be computed from the rules.
     pub covered: bool,
     /// False when a hard limit fails (road too narrow for the height, FAR exceeded, …).
@@ -299,11 +306,29 @@ fn build(t: &Track1, input: &SceneInput) -> Scene {
     };
     // Whole storeys of at least FLOOR_HEIGHT: 7.5 m is 2 floors, not 3 of 2.5 m.
     let floors = ((height / FLOOR_HEIGHT + 1e-9).floor() as u32).max(1);
+    let rise = input.plot_rise.filter(|r| r.is_finite()).unwrap_or(0.0);
     let floor_h = height / floors as f64;
 
     if residential {
         if let Some(n) = plot_norm_note(fx, &building_type, plot_area, frontage) {
             info.push(n);
+        }
+    }
+
+    if rise.abs() > 0.005 {
+        let (dir, amt) = if rise > 0.0 { ("above", rise) } else { ("below", -rise) };
+        info.push(format!(
+            "Plot is {amt} m {dir} the road. On a level plot the height is measured from the ground at the centre of the frontage; on a sloping one from the road centre line or the average plot level, whichever is higher (Rule 2(34))."
+        ));
+        if rise < 0.0 {
+            if let Some(p) = fx.v("plinth.min_cm").map(|c| c / 100.0) {
+                let gap = round2(-rise - p);
+                if gap > 0.0 {
+                    info.push(format!(
+                        "A {p} m plinth would still sit {gap} m below the road. Rule 68(1) asks that the plinth be placed so the site drains; raise it or plan drainage."
+                    ));
+                }
+            }
         }
     }
 
@@ -501,6 +526,7 @@ fn build(t: &Track1, input: &SceneInput) -> Scene {
         chhajja: has("chhajja"),
         voltage: input.voltage.as_deref(),
         water: input.water.as_deref(),
+        rise,
     };
     let mut components = Vec::new();
     let mut not_drawn = Vec::new();
@@ -568,6 +594,7 @@ fn build(t: &Track1, input: &SceneInput) -> Scene {
         floor_h_m: round2(floor_h),
         building_type,
         use_type,
+        plot_rise_m: rise,
         envelope,
         assumed,
         front,
@@ -581,6 +608,7 @@ fn build(t: &Track1, input: &SceneInput) -> Scene {
         plinth_m: plinth,
         roof: if farm { "sloping" } else { "flat" },
         far,
+        coverage_cap_pct: row.and_then(|r| r.coverage_pct),
         covered,
         permitted,
         components,
@@ -589,6 +617,73 @@ fn build(t: &Track1, input: &SceneInput) -> Scene {
         notes,
         info,
     }
+}
+
+/// Plot level relative to the road from the question, in metres (+ above, − below):
+/// "plot is 1.5 m above the road", "road is 2 m higher than the plot", "सड़क से 1 मीटर नीचे",
+/// or two sea levels ("road at 500 m above sea level, plot at 501.5 m above sea level").
+pub fn parse_rise(q: &str) -> Option<f64> {
+    let q = q.to_lowercase();
+    let num = r"([0-9]+(?:\.[0-9]+)?)\s*(?:m|meters?|metres?|मीटर)";
+    let up = |w: &str| ["above", "higher than", "ऊपर", "ऊँचा", "ऊंचा", "ऊँची", "ऊंची"].iter().any(|k| w.starts_with(k));
+    // Two sea levels first, so "500 m above sea level" is never read as a plot-road difference.
+    let re = Regex::new(&format!(r"{num}\s*(?:above (?:mean )?sea level|amsl|msl)")).ok()?;
+    let (mut road, mut plot) = (None, None);
+    for c in re.captures_iter(&q) {
+        let start = c.get(0)?.start();
+        let mut lo = start.saturating_sub(40);
+        while !q.is_char_boundary(lo) {
+            lo -= 1;
+        }
+        let before = &q[lo..start];
+        let r = before.rfind("road").max(before.rfind("street"));
+        let p = ["plot", "land", "site", "ground"].iter().filter_map(|k| before.rfind(k)).max();
+        let v: f64 = c[1].parse().ok()?;
+        match (r, p) {
+            (Some(a), Some(b)) if a > b => road = Some(v),
+            (Some(_), None) => road = Some(v),
+            (_, Some(_)) => plot = Some(v),
+            _ => {}
+        }
+    }
+    if let (Some(r), Some(p)) = (road, plot) {
+        return Some(round2(p - r));
+    }
+    let q = re_sea_free(&q);
+
+    // plot ... N m above/below the road
+    let re = Regex::new(&format!(
+        r"(?:plot|land|site|ground|house|building)[^.?!।]*?{num}\s*(above|higher than|below|lower than)\s+[^.?!।,;]{{0,20}}?(?:road|street)"
+    ))
+    .ok()?;
+    if let Some(c) = re.captures(&q) {
+        let v: f64 = c[1].parse().ok()?;
+        return Some(if up(&c[2]) { v } else { -v });
+    }
+    // road ... N m above/below the plot
+    let re = Regex::new(&format!(
+        r"(?:road|street)[^.?!।]*?{num}\s*(above|higher than|below|lower than)\s+[^.?!।,;]{{0,20}}?(?:plot|land|site|ground)"
+    ))
+    .ok()?;
+    if let Some(c) = re.captures(&q) {
+        let v: f64 = c[1].parse().ok()?;
+        return Some(if up(&c[2]) { -v } else { v });
+    }
+    // Hindi: (प्लॉट) सड़क से N मीटर ऊँचा / नीचे
+    let re = Regex::new(&format!(r"(?:सड़क|रोड)\s*से\s*{num}\s*(ऊपर|ऊँचा|ऊंचा|ऊँची|ऊंची|नीचे|नीचा|नीची)")).ok()?;
+    if let Some(c) = re.captures(&q) {
+        let v: f64 = c[1].parse().ok()?;
+        return Some(if up(&c[2]) { v } else { -v });
+    }
+    None
+}
+
+/// Drop "N m above sea level" phrases so the relative patterns below cannot match them.
+fn re_sea_free(q: &str) -> String {
+    Regex::new(r"[0-9]+(?:\.[0-9]+)?\s*(?:m|meters?|metres?)\s*(?:above (?:mean )?sea level|amsl|msl)")
+        .unwrap()
+        .replace_all(q, "")
+        .into_owned()
 }
 
 /// Rule 53(1) plot norms for the building type; advisory, as they govern new plots.
@@ -701,6 +796,8 @@ struct Ctx<'a> {
     chhajja: bool,
     voltage: Option<&'a str>,
     water: Option<&'a str>,
+    /// Plot ground above the road centre line (m).
+    rise: f64,
 }
 
 struct Builder {
@@ -788,6 +885,18 @@ fn build_component(x: &Ctx, e: &catalog::Entry) -> Option<Component> {
             let (fh, oh) = (v("wall.front")?, v("wall.other")?);
             b.src(f("wall.front")).src(f("wall.other"));
             b.note(format!("Front wall at most {fh} m; side and rear at most {oh} m (no service road)."));
+            // Rule 78 measures these above the centre line of the front street.
+            let (fh, oh) = (round2((fh - x.rise).max(0.0)), round2((oh - x.rise).max(0.0)));
+            if x.rise.abs() > 0.005 {
+                b.src(f("wall.measure"));
+                b.note(format!(
+                    "Measured above the street centre line: with the plot {} m {} the road, the walls rise at most {fh} m (front) and {oh} m (others) above the plot.",
+                    round2(x.rise.abs()), if x.rise > 0.0 { "above" } else { "below" }
+                ));
+                if fh == 0.0 {
+                    b.note("The plot is higher than the front-wall limit: no front wall above the plot ground is allowed.");
+                }
+            }
             let needs_fire_gate = !x.residential || x.height > x.r56_max;
             let gate = if needs_fire_gate {
                 let g = v("gate.width")?;

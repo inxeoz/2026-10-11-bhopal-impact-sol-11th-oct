@@ -331,3 +331,34 @@ async fn report_all_samples() {
     }
     println!("\nanswered {ok}/{} (last two are meant to abstain)", qs.len());
 }
+
+#[test]
+fn plot_level_against_the_road() {
+    use bhopal_sahayak::scene::parse_rise;
+    assert_eq!(parse_rise("my plot is 1.5 m above the road"), Some(1.5));
+    assert_eq!(parse_rise("The land sits 2 metres below the street"), Some(-2.0));
+    assert_eq!(parse_rise("the road is 0.8 m higher than my plot"), Some(-0.8));
+    assert_eq!(parse_rise("road at 500 m above sea level and plot at 501.2 m above sea level"), Some(1.2));
+    assert_eq!(parse_rise("प्लॉट सड़क से 1 मीटर नीचे है"), Some(-1.0));
+    assert_eq!(parse_rise("9 m tall house on a 12 m road"), None);
+}
+
+#[tokio::test]
+async fn raised_plot_lowers_the_boundary_wall() {
+    let t = Track1::load(RULES).unwrap();
+    let a = t
+        .solve(
+            "My 200 sq m plot is 1.2 m above a 9 m road. 9 m tall house with a boundary wall. What front open space?",
+            Lang::En,
+            &Llm::disabled(),
+        )
+        .await;
+    let s = &a.facts["scene"];
+    // 1.2 is the level, not the road width.
+    assert_eq!(s["street_width_m"], 9.0);
+    assert_eq!(s["plot_rise_m"], 1.2);
+    let wall = s["components"].as_array().unwrap().iter().find(|c| c["id"] == "boundary_wall").unwrap();
+    // Rule 78 heights are above the street centre line: 1.5 - 1.2 and 2.0 - 1.2.
+    assert_eq!(wall["params"]["front_h"], 0.3);
+    assert_eq!(wall["params"]["other_h"], 0.8);
+}
